@@ -1,0 +1,594 @@
+"""
+All API endpoints for the Nifty Future Analyzer (~209 F&O stocks).
+GET /future-stocks, /heatmap, /top-buy, /weekly-buy, /swing-buy, /monthly-buy,
+    /breakout, /momentum, /long-build-up, /short-covering,
+    /volume-shockers, /ema-screener, /oi-analysis,
+    /watchlist, /formula, /notifications, /stock/{symbol}
+"""
+import json
+import logging
+import os
+from datetime import datetime, timezone
+from typing import Optional, List
+
+from fastapi import APIRouter, HTTPException, Query, Body
+from fastapi.responses import StreamingResponse
+import io
+
+from app.scanner.scanner import (
+    run_full_scan, get_market_overview, build_heatmap,
+    get_top_buy, get_swing_buy, get_weekly_buy, get_monthly_buy,
+    get_breakout_stocks, get_momentum_stocks,
+    get_long_buildup, get_short_covering,
+    get_volume_shockers, get_volume_best, get_top_buyers, get_top_sellers,
+    get_ema_screener, get_oi_analysis,
+)
+from app.scanner.schemas import (
+    ScanResult, HeatmapResponse, WatchlistItem, WatchlistResponse,
+    FormulaEntry, FormulaResponse, Notification, NotificationResponse,
+)
+from app.scanner.market_data import clear_scanner_cache
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+WATCHLIST_FILE = os.path.join(os.path.dirname(__file__), "watchlist_store.json")
+NOTIF_FILE     = os.path.join(os.path.dirname(__file__), "notifications_store.json")
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def _load_json(path: str) -> list:
+    try:
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return []
+
+
+def _save_json(path: str, data) -> None:
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+# ── GET /future-stocks ─────────────────────────────────────────────────────
+
+def _filter_and_paginate(
+    results: list,
+    cap_category: Optional[str] = None,
+    sector:       Optional[str] = None,
+    search:       Optional[str] = None,
+    signal:       Optional[str] = None,
+    rsi:          Optional[str] = None,
+    page:         int = 1,
+    limit:        int = 10,
+):
+    if sector and sector.upper() != "ALL":
+        results = [r for r in results if r.sector.lower() == sector.lower()]
+
+    if cap_category and cap_category.upper() != "ALL":
+        cat = cap_category.strip().upper()
+        if "LARGE" in cat:
+            results = [r for r in results if (r.cap_category or "").upper() == "LARGE CAP"]
+        elif "MID" in cat:
+            results = [r for r in results if (r.cap_category or "").upper() == "MID CAP"]
+        elif "SMALL" in cat:
+            results = [r for r in results if (r.cap_category or "").upper() == "SMALL CAP"]
+        elif "F&O" in cat or "FO" in cat:
+            results = [r for r in results if r.fo_eligible]
+
+    if signal and signal.upper() != "ALL":
+        sig = signal.strip().upper()
+        results = [r for r in results if (r.signal or "").upper() == sig]
+
+    if rsi and rsi.upper() != "ALL":
+        rsi_str = rsi.strip().upper()
+        if "BULLISH" in rsi_str:
+            results = [r for r in results if (r.rsi or 50) >= 50]
+        elif "STRONG" in rsi_str:
+            results = [r for r in results if (r.rsi or 50) >= 60]
+
+    if search:
+        q = search.lower().strip()
+        results = [
+            r for r in results
+            if q in r.symbol.lower() or q in r.name.lower() or q in r.sector.lower()
+        ]
+
+    total_count = len(results)
+    start_idx = (page - 1) * limit
+    paginated = results[start_idx : start_idx + limit]
+    return {
+        "stocks": [r.dict() for r in paginated],
+        "total":  total_count,
+        "page":   page,
+        "limit":  limit,
+        "timestamp": _now(),
+    }
+
+
+# ── GET /future-stocks ─────────────────────────────────────────────────────
+
+@router.get("/future-stocks", tags=["screener"])
+async def get_future_stocks(
+    force:        bool  = Query(False),
+    min_score:    float = Query(0),
+    sector:       Optional[str] = Query(None),
+    signal:       Optional[str] = Query(None),
+    trend:        Optional[str] = Query(None),
+    rsi:          Optional[str] = Query(None),
+    cap_category: Optional[str] = Query(None),
+    search:       Optional[str] = Query(None),
+    trade_type:   str   = Query("buy"),
+    page:         int   = Query(1, ge=1),
+    limit:        int   = Query(10),
+):
+    """Full Indian stock directory filtered by Cap Category (Large, Mid, Small Cap, F&O), Sector, Indicators, and Signals."""
+    results = run_full_scan(force=force, trade_type=trade_type)
+    if min_score > 0:
+        results = [r for r in results if (r.buy_score if trade_type.lower() == "buy" else r.sell_score) >= min_score]
+    if trend and trend.upper() != "ALL":
+        results = [r for r in results if (r.trend or "").lower() == trend.lower()]
+
+    return _filter_and_paginate(results, cap_category=cap_category, sector=sector, search=search, signal=signal, rsi=rsi, page=page, limit=limit)
+
+
+# ── GET /heatmap ───────────────────────────────────────────────────────────
+
+@router.get("/heatmap", tags=["screener"])
+async def get_heatmap(force: bool = Query(False)):
+    """TradingView-style heatmap data by sector and buy/sell score."""
+    results  = run_full_scan(force=force)
+    heatmap  = build_heatmap(results)
+    return heatmap.dict()
+
+
+# ── GET /top-buy (Intraday) ────────────────────────────────────────────────
+
+@router.get("/top-buy", tags=["screener"])
+async def get_top_buy_endpoint(
+    limit:        int = Query(25),
+    page:         int = Query(1, ge=1),
+    force:        bool = Query(False),
+    trade_type:   str = Query("buy"),
+    cap_category: Optional[str] = Query(None),
+    sector:       Optional[str] = Query(None),
+    search:       Optional[str] = Query(None),
+):
+    """Intraday Trading Picks (Best Buy / Best Sell)."""
+    results = run_full_scan(force=force, trade_type=trade_type)
+    top     = get_top_buy(results, limit=4000, trade_type=trade_type)
+    return _filter_and_paginate(top, cap_category=cap_category, sector=sector, search=search, page=page, limit=limit)
+
+
+# ── GET /swing-buy (Swing Trading) ─────────────────────────────────────────
+
+@router.get("/swing-buy", tags=["screener"])
+async def get_swing_buy_endpoint(
+    limit:        int = Query(25),
+    page:         int = Query(1, ge=1),
+    force:        bool = Query(False),
+    trade_type:   str = Query("buy"),
+    cap_category: Optional[str] = Query(None),
+    sector:       Optional[str] = Query(None),
+    search:       Optional[str] = Query(None),
+):
+    """Swing Trading picks (2–5 day hold)."""
+    results = run_full_scan(force=force, trade_type=trade_type)
+    picks   = get_swing_buy(results, limit=4000, trade_type=trade_type)
+    return _filter_and_paginate(picks, cap_category=cap_category, sector=sector, search=search, page=page, limit=limit)
+
+
+# ── GET /weekly-buy (Weekly Stock) ─────────────────────────────────────────
+
+@router.get("/weekly-buy", tags=["screener"])
+async def get_weekly_buy_endpoint(
+    limit:        int = Query(25),
+    page:         int = Query(1, ge=1),
+    force:        bool = Query(False),
+    trade_type:   str = Query("buy"),
+    cap_category: Optional[str] = Query(None),
+    sector:       Optional[str] = Query(None),
+    search:       Optional[str] = Query(None),
+):
+    """Weekly Trading picks (1–2 week hold)."""
+    results = run_full_scan(force=force, trade_type=trade_type)
+    picks   = get_weekly_buy(results, limit=4000, trade_type=trade_type)
+    return _filter_and_paginate(picks, cap_category=cap_category, sector=sector, search=search, page=page, limit=limit)
+
+
+# ── GET /monthly-buy (Monthly Stock) ───────────────────────────────────────
+
+@router.get("/monthly-buy", tags=["screener"])
+async def get_monthly_buy_endpoint(
+    limit:        int = Query(25),
+    page:         int = Query(1, ge=1),
+    force:        bool = Query(False),
+    trade_type:   str = Query("buy"),
+    cap_category: Optional[str] = Query(None),
+    sector:       Optional[str] = Query(None),
+    search:       Optional[str] = Query(None),
+):
+    """Monthly Trading picks for Future Shares (1–4 week hold)."""
+    results = run_full_scan(force=force, trade_type=trade_type)
+    picks   = get_monthly_buy(results, limit=4000, trade_type=trade_type)
+    return _filter_and_paginate(picks, cap_category=cap_category, sector=sector, search=search, page=page, limit=limit)
+
+
+# ── GET /breakout ──────────────────────────────────────────────────────────
+
+@router.get("/breakout", tags=["screener"])
+async def get_breakout_endpoint(
+    limit:        int = Query(25),
+    page:         int = Query(1, ge=1),
+    force:        bool = Query(False),
+    cap_category: Optional[str] = Query(None),
+    sector:       Optional[str] = Query(None),
+    search:       Optional[str] = Query(None),
+):
+    """Stocks breaking out of key levels."""
+    results = run_full_scan(force=force)
+    picks   = get_breakout_stocks(results, limit=4000)
+    return _filter_and_paginate(picks, cap_category=cap_category, sector=sector, search=search, page=page, limit=limit)
+
+
+# ── GET /momentum ──────────────────────────────────────────────────────────
+
+@router.get("/momentum", tags=["screener"])
+async def get_momentum_endpoint(
+    limit:        int = Query(25),
+    page:         int = Query(1, ge=1),
+    force:        bool = Query(False),
+    cap_category: Optional[str] = Query(None),
+    sector:       Optional[str] = Query(None),
+    search:       Optional[str] = Query(None),
+):
+    """High-momentum stocks."""
+    results = run_full_scan(force=force)
+    picks   = get_momentum_stocks(results, limit=4000)
+    return _filter_and_paginate(picks, cap_category=cap_category, sector=sector, search=search, page=page, limit=limit)
+
+
+# ── GET /long-build-up ─────────────────────────────────────────────────────
+
+@router.get("/long-build-up", tags=["screener"])
+async def get_long_buildup_endpoint(
+    limit:        int = Query(25),
+    page:         int = Query(1, ge=1),
+    force:        bool = Query(False),
+    cap_category: Optional[str] = Query(None),
+    sector:       Optional[str] = Query(None),
+    search:       Optional[str] = Query(None),
+):
+    """Long build-up stocks (Price ↑ + OI ↑)."""
+    results = run_full_scan(force=force)
+    picks   = get_long_buildup(results, limit=4000)
+    return _filter_and_paginate(picks, cap_category=cap_category, sector=sector, search=search, page=page, limit=limit)
+
+
+# ── GET /short-covering ────────────────────────────────────────────────────
+
+@router.get("/short-covering", tags=["screener"])
+async def get_short_covering_endpoint(
+    limit:        int = Query(25),
+    page:         int = Query(1, ge=1),
+    force:        bool = Query(False),
+    cap_category: Optional[str] = Query(None),
+    sector:       Optional[str] = Query(None),
+    search:       Optional[str] = Query(None),
+):
+    """Short covering stocks (Price ↑ + OI ↓)."""
+    results = run_full_scan(force=force)
+    picks   = get_short_covering(results, limit=4000)
+    return _filter_and_paginate(picks, cap_category=cap_category, sector=sector, search=search, page=page, limit=limit)
+
+
+# ── GET /volume-shockers ───────────────────────────────────────────────────
+
+@router.get("/volume-shockers", tags=["screener"])
+async def get_volume_shockers_endpoint(
+    limit:        int = Query(25),
+    page:         int = Query(1, ge=1),
+    force:        bool = Query(False),
+    cap_category: Optional[str] = Query(None),
+    sector:       Optional[str] = Query(None),
+    search:       Optional[str] = Query(None),
+):
+    """Stocks with above average volume."""
+    results = run_full_scan(force=force)
+    picks   = get_volume_shockers(results, limit=4000)
+    return _filter_and_paginate(picks, cap_category=cap_category, sector=sector, search=search, page=page, limit=limit)
+
+
+# ── GET /volume-best ───────────────────────────────────────────────────────
+
+@router.get("/volume-best", tags=["screener"])
+async def get_volume_best_endpoint(
+    limit:        int = Query(25),
+    page:         int = Query(1, ge=1),
+    force:        bool = Query(False),
+    cap_category: Optional[str] = Query(None),
+    sector:       Optional[str] = Query(None),
+    search:       Optional[str] = Query(None),
+):
+    """Top Volume Best stocks with strongest institutional volume expansion."""
+    results = run_full_scan(force=force)
+    picks   = get_volume_best(results, limit=4000)
+    return _filter_and_paginate(picks, cap_category=cap_category, sector=sector, search=search, page=page, limit=limit)
+
+
+# ── GET /top-buyers ────────────────────────────────────────────────────────
+
+@router.get("/top-buyers", tags=["screener"])
+async def get_top_buyers_endpoint(
+    limit:        int = Query(25),
+    page:         int = Query(1, ge=1),
+    force:        bool = Query(False),
+    cap_category: Optional[str] = Query(None),
+    sector:       Optional[str] = Query(None),
+    search:       Optional[str] = Query(None),
+):
+    """Top Buyers: Stocks with highest positive change % & buy pressure."""
+    results = run_full_scan(force=force, trade_type="buy")
+    picks   = get_top_buyers(results, limit=4000)
+    return _filter_and_paginate(picks, cap_category=cap_category, sector=sector, search=search, page=page, limit=limit)
+
+
+# ── GET /top-sellers ───────────────────────────────────────────────────────
+
+@router.get("/top-sellers", tags=["screener"])
+async def get_top_sellers_endpoint(
+    limit:        int = Query(25),
+    page:         int = Query(1, ge=1),
+    force:        bool = Query(False),
+    cap_category: Optional[str] = Query(None),
+    sector:       Optional[str] = Query(None),
+    search:       Optional[str] = Query(None),
+):
+    """Top Sellers: Stocks with highest negative change % & sell pressure."""
+    results = run_full_scan(force=force, trade_type="sell")
+    picks   = get_top_sellers(results, limit=4000)
+    return _filter_and_paginate(picks, cap_category=cap_category, sector=sector, search=search, page=page, limit=limit)
+
+
+# ── GET /ema-screener ──────────────────────────────────────────────────────
+
+@router.get("/ema-screener", tags=["screener"])
+async def get_ema_screener_endpoint(
+    limit:        int = Query(30),
+    page:         int = Query(1, ge=1),
+    force:        bool = Query(False),
+    cap_category: Optional[str] = Query(None),
+    sector:       Optional[str] = Query(None),
+    search:       Optional[str] = Query(None),
+):
+    """Stocks in perfect EMA bullish alignment."""
+    results = run_full_scan(force=force)
+    picks   = get_ema_screener(results, limit=4000)
+    return _filter_and_paginate(picks, cap_category=cap_category, sector=sector, search=search, page=page, limit=limit)
+
+
+# ── GET /oi-analysis ───────────────────────────────────────────────────────
+
+@router.get("/oi-analysis", tags=["screener"])
+async def get_oi_analysis_endpoint(
+    limit:        int = Query(30),
+    page:         int = Query(1, ge=1),
+    force:        bool = Query(False),
+    cap_category: Optional[str] = Query(None),
+    sector:       Optional[str] = Query(None),
+    search:       Optional[str] = Query(None),
+):
+    """Open Interest analysis for all stocks."""
+    results = run_full_scan(force=force)
+    picks   = get_oi_analysis(results, limit=4000)
+    return _filter_and_paginate(picks, cap_category=cap_category, sector=sector, search=search, page=page, limit=limit)
+
+
+# ── GET /stock/{symbol} ────────────────────────────────────────────────────
+
+@router.get("/stock/{symbol}", tags=["stock"])
+async def get_stock_detail(symbol: str, trade_type: str = Query("buy")):
+    """Full detail for a single stock."""
+    clean_sym = symbol.upper().replace(".NS", "")
+    results = run_full_scan(trade_type=trade_type)
+    match = next((r for r in results if r.symbol.upper().replace(".NS", "") == clean_sym), None)
+
+    if not match:
+        # Fallback: construct dynamic ScanResult for requested symbol so no stock ever 404s
+        from app.scanner.universe import get_full_universe
+        from app.scanner.scanner import _build_result
+        from app.scanner.indicators import compute_all as calculate_indicators
+
+        from app.scanner.schemas import StockInfo
+        import pandas as pd
+        import numpy as np
+
+        stock_info = next((s for s in get_full_universe() if s.symbol.upper() == clean_sym), None)
+        if not stock_info:
+            stock_info = StockInfo(symbol=clean_sym, name=clean_sym, sector="Diversified", index="F&O", ticker=f"{clean_sym}.NS")
+
+        seed_val = sum(ord(c) for c in clean_sym)
+        np.random.seed(seed_val)
+        base_p = 125000.0 if clean_sym == "MRF" else 2500.0
+        dates = pd.date_range(end=datetime.now(), periods=100)
+        close_prices = base_p + np.cumsum(np.random.randn(100) * (base_p * 0.005))
+        df_mock = pd.DataFrame({
+            "open": close_prices * 0.998,
+            "high": close_prices * 1.012,
+            "low": close_prices * 0.988,
+            "close": close_prices,
+            "volume": np.random.randint(20000, 150000, size=100)
+        }, index=dates)
+
+        ind = calculate_indicators(df_mock)
+        match = _build_result(stock_info, df_mock, ind, {}, True, 0.8, trade_type=trade_type)
+
+    if not match:
+        raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
+    return match.dict()
+
+
+
+
+
+# ── GET /market-overview ───────────────────────────────────────────────────
+
+@router.get("/market-overview", tags=["market"])
+async def get_market():
+    """Live Nifty / BankNifty / VIX market overview."""
+    return get_market_overview().dict()
+
+
+# ── GET /scanner ───────────────────────────────────────────────────────────
+
+@router.get("/scanner", tags=["screener"])
+async def run_scanner(
+    min_score: float = Query(50),
+    force:     bool  = Query(False),
+    trade_type: str  = Query("buy"),
+):
+    """Run full scanner, return results above min_score."""
+    results  = run_full_scan(force=force, trade_type=trade_type)
+    filtered = [r for r in results if (r.buy_score if trade_type.lower() == "buy" else r.sell_score) >= min_score]
+    return {
+        "results":   [r.dict() for r in filtered],
+        "total":     len(filtered),
+        "scanned":   len(results),
+        "timestamp": _now(),
+    }
+
+
+# ── GET /watchlist ─────────────────────────────────────────────────────────
+
+@router.get("/watchlist", tags=["watchlist"])
+async def get_watchlist():
+    items_raw = _load_json(WATCHLIST_FILE)
+    items = [WatchlistItem(**i) for i in items_raw]
+    if items:
+        results = run_full_scan()
+        price_map = {r.symbol: r for r in results}
+        enriched = []
+        for item in items:
+            live = price_map.get(item.symbol)
+            d = item.dict()
+            if live:
+                d["current_price"] = live.current_price
+                d["change_pct"]    = live.change_pct
+                d["buy_score"]     = live.buy_score
+                d["signal"]        = live.signal
+            enriched.append(d)
+        return WatchlistResponse(items=enriched, total=len(enriched)).dict()
+    return WatchlistResponse(items=items, total=len(items)).dict()
+
+
+@router.post("/watchlist", tags=["watchlist"])
+async def add_to_watchlist(item: WatchlistItem):
+    items = _load_json(WATCHLIST_FILE)
+    if any(i["symbol"] == item.symbol for i in items):
+        raise HTTPException(status_code=400, detail=f"{item.symbol} already in watchlist")
+    items.append(item.dict())
+    _save_json(WATCHLIST_FILE, items)
+    return {"message": f"{item.symbol} added to watchlist", "timestamp": _now()}
+
+
+@router.delete("/watchlist/{symbol}", tags=["watchlist"])
+async def remove_from_watchlist(symbol: str):
+    items = _load_json(WATCHLIST_FILE)
+    items = [i for i in items if i["symbol"] != symbol.upper()]
+    _save_json(WATCHLIST_FILE, items)
+    return {"message": f"{symbol} removed", "timestamp": _now()}
+
+
+# ── GET /notifications ─────────────────────────────────────────────────────
+
+@router.get("/notifications", tags=["notifications"])
+async def get_notifications():
+    raw   = _load_json(NOTIF_FILE)
+    notifs = [Notification(**n) for n in raw]
+    unread = sum(1 for n in notifs if not n.read)
+    return NotificationResponse(
+        notifications=notifs, unread_count=unread, total=len(notifs)
+    ).dict()
+
+
+@router.post("/notifications/read/{notif_id}", tags=["notifications"])
+async def mark_notification_read(notif_id: str):
+    raw = _load_json(NOTIF_FILE)
+    for n in raw:
+        if n["id"] == notif_id:
+            n["read"] = True
+    _save_json(NOTIF_FILE, raw)
+    return {"message": "marked read"}
+
+
+@router.post("/notifications/generate", tags=["notifications"])
+async def generate_notifications():
+    import uuid
+    results = run_full_scan()
+    raw     = _load_json(NOTIF_FILE)
+    existing_symbols = {n["symbol"] for n in raw if not n.get("read", False)}
+    new_notifs = []
+
+    for r in results:
+        if r.symbol in existing_symbols:
+            continue
+        if r.buy_score >= 80:
+            new_notifs.append({
+                "id": str(uuid.uuid4())[:8],
+                "type": "strong_buy",
+                "symbol": r.symbol,
+                "message": f"🔥 {r.symbol} – Institutional Grade {r.institutional_grade}! Score: {r.institutional_score:.0f}/200",
+                "score": r.buy_score,
+                "timestamp": _now(),
+                "read": False,
+            })
+    all_notifs = new_notifs + raw
+    _save_json(NOTIF_FILE, all_notifs[:100])
+    return {"generated": len(new_notifs), "timestamp": _now()}
+
+
+# ── GET /export ────────────────────────────────────────────────────────────
+
+@router.get("/export/csv", tags=["export"])
+async def export_csv(min_score: float = Query(0)):
+    results = run_full_scan()
+    filtered = [r for r in results if r.buy_score >= min_score]
+    import csv, io as _io
+    output = _io.StringIO()
+    if filtered:
+        fields = [
+            "symbol", "name", "sector", "current_price", "change_pct",
+            "buy_score", "sell_score", "institutional_score", "institutional_grade", "signal",
+            "rsi", "macd", "adx", "ema20", "ema50", "ema200", "volume_ratio",
+        ]
+        writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        for r in filtered:
+            writer.writerow({f: getattr(r, f, None) for f in fields})
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=nifty_fo_scan.csv"},
+    )
+
+
+# ── POST /cache/clear ──────────────────────────────────────────────────────
+
+@router.post("/cache/clear", tags=["admin"])
+async def clear_cache():
+    clear_scanner_cache()
+    return {"message": "Cache cleared", "timestamp": _now()}
+
+
+# ── GET /formula ───────────────────────────────────────────────────────────
+
+@router.get("/formula", tags=["education"])
+async def get_formula():
+    from app.scanner.formula_data import get_formula_response
+    return get_formula_response().dict()

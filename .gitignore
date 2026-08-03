@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+backend/venv/
+.venv/
+env/
+ENV/
+
+# Environment variables
+.env
+*.env.local
+*.env.production.local
+
+# Node / React
+frontend/node_modules/
+frontend/dist/
+frontend/.cache/
+
+# Build output
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*.DS_Store
+Thumbs.db
+
+# Scanner data stores
+backend/app/scanner/watchlist_store.json
+backend/app/scanner/notifications_store.json
+
+# Python version file (keep)
+# .python-version
+
+# Production env (keep example, not actual)
+!.env.example
+!frontend/.env.example
