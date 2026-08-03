@@ -49,6 +49,7 @@ apiSlow.interceptors.response.use(
 // ── Market ─────────────────────────────────────────────────────────────────
 export const fetchMarket       = async (): Promise<MarketData>     => (await api.get('/market')).data;
 export const fetchMarketOverview = async (): Promise<MarketOverview> => (await api.get('/market-overview')).data;
+export const fetchMarketStatus = async () => (await api.get('/market-status')).data;
 export const fetchIndicators   = async (): Promise<IndicatorValues> => (await api.get('/indicators')).data;
 export const fetchSignal       = async (): Promise<SignalResponse>  => (await api.get('/signal')).data;
 export const fetchHistory      = async (limit = 100): Promise<HistoryResponse> =>

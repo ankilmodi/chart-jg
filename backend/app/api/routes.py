@@ -442,3 +442,185 @@ async def legacy_chart(symbol: str):
         })
     return {"symbol": symbol, "data": chart_points}
 
+
+
+# ---------------------------------------------------------------------------
+# Market Session Status  (NSE/BSE open/closed detection)
+# ---------------------------------------------------------------------------
+
+@router.get("/market-status", tags=["market"])
+async def get_market_status():
+    """
+    Returns current NSE/BSE market session state.
+
+    Response fields:
+      - is_open          : bool   – True during 09:15–15:30 IST on trading days
+      - is_trading_day   : bool   – False on weekends & NSE holidays
+      - status           : str    – "LIVE" | "CLOSED" | "PRE_OPEN" | "HOLIDAY"
+      - data_source      : str    – "live" | "cached" | "offline"
+      - message          : str    – Human-readable description
+      - current_time_ist : str    – Current IST timestamp
+      - next_open        : str|null – ISO datetime of next market open
+      - holiday_name     : str|null – Name of holiday if today is one
+      - refresh_interval : int    – Suggested client refresh interval (seconds)
+    """
+    try:
+        from app.services.market_session import market_session
+        status = market_session.get_market_status()
+        return status.to_dict()
+    except Exception as exc:
+        logger.error("market-status error: %s", exc, exc_info=True)
+        # Return a safe fallback so the frontend never crashes
+        from datetime import datetime, timezone
+        import pytz
+        ist = pytz.timezone("Asia/Kolkata")
+        now_ist = datetime.now(ist)
+        return {
+            "is_open":          False,
+            "is_trading_day":   False,
+            "status":           "CLOSED",
+            "data_source":      "offline",
+            "message":          "Market status unavailable – showing offline data",
+            "current_time_ist": now_ist.strftime("%Y-%m-%d %H:%M:%S IST"),
+            "next_open":        None,
+            "holiday_name":     None,
+            "refresh_interval": 300,
+        }
+
+
+@router.get("/market-session/config", tags=["market"])
+async def get_market_session_config():
+    """Return market session configuration (timezone, hours, holidays count)."""
+    from app.services.market_session import market_session, IST, MARKET_OPEN_TIME, MARKET_CLOSE_TIME
+    return {
+        "timezone":    "Asia/Kolkata",
+        "open_time":   MARKET_OPEN_TIME.strftime("%H:%M"),
+        "close_time":  MARKET_CLOSE_TIME.strftime("%H:%M"),
+        "holidays":    len(market_session._holidays),
+        "current_ist": market_session.ist_now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+@router.post("/market-session/reload-holidays", tags=["market"])
+async def reload_holidays():
+    """Hot-reload the holidays.json file without restarting the server."""
+    from app.services.market_session import market_session
+    count = market_session.reload_holidays()
+    return {"message": f"Holidays reloaded: {count} entries", "timestamp": _now()}
+
+
+# ---------------------------------------------------------------------------
+# Market Overview  (Nifty50 / BankNifty / VIX snapshot)
+# ---------------------------------------------------------------------------
+
+@router.get("/market-overview", tags=["market"])
+async def get_market_overview():
+    """
+    Returns a market overview including Nifty50, VIX, and trend.
+    Data is sourced from yfinance; cached 60 s.
+    Falls back to last-known cached data if API is unavailable.
+    """
+    import time as _time
+    from app.services.market_data import _cached, _set_cache
+    from app.services.offline_market_data import offline_market_data
+    from app.services.market_session import market_session
+
+    cache_key   = "market_overview"
+    cache_ttl   = 60  # seconds
+    cached      = _cached(cache_key)
+    if cached is not None:
+        return cached
+
+    session_status = market_session.get_market_status()
+
+    try:
+        import yfinance as yf
+
+        nifty  = yf.Ticker("^NSEI")
+        vix    = yf.Ticker("^INDIAVIX")
+
+        nifty_info = nifty.fast_info
+        vix_info   = vix.fast_info
+
+        nifty_price      = float(nifty_info.get("last_price") or nifty_info.get("previousClose") or 0)
+        nifty_prev       = float(nifty_info.get("previousClose") or nifty_price)
+        nifty_change     = round(nifty_price - nifty_prev, 2)
+        nifty_change_pct = round((nifty_change / nifty_prev * 100) if nifty_prev else 0, 2)
+
+        vix_price = float(vix_info.get("last_price") or vix_info.get("previousClose") or 0)
+
+        result = {
+            "nifty_price":      round(nifty_price, 2),
+            "nifty_change":     nifty_change,
+            "nifty_change_pct": nifty_change_pct,
+            "vix":              round(vix_price, 2),
+            "vix_safe":         vix_price < 20,
+            "market_trend":     "bullish" if nifty_change_pct >= 0.3 else "bearish" if nifty_change_pct <= -0.3 else "neutral",
+            "data_source":      session_status.data_source,
+            "market_status":    session_status.status,
+            "is_market_open":   session_status.is_open,
+            "timestamp":        _now(),
+        }
+
+        _set_cache(cache_key, result)
+        # Also persist to offline store for fallback
+        offline_market_data.store_live_response(cache_key, result)
+        return result
+
+    except Exception as exc:
+        logger.warning("market-overview live fetch failed: %s. Using cached.", exc)
+        # Try offline fallback
+        fallback = offline_market_data.get_cached(cache_key)
+        if fallback and fallback.get("data"):
+            data = fallback["data"]
+            data["data_source"] = "cached"
+            data["market_status"] = session_status.status
+            data["is_market_open"] = session_status.is_open
+            return data
+
+        # Hard fallback
+        return {
+            "nifty_price":      None,
+            "nifty_change":     None,
+            "nifty_change_pct": None,
+            "vix":              None,
+            "vix_safe":         True,
+            "market_trend":     "neutral",
+            "data_source":      "offline",
+            "market_status":    session_status.status,
+            "is_market_open":   session_status.is_open,
+            "timestamp":        _now(),
+        }
+
+
+# ---------------------------------------------------------------------------
+# Offline data cache management
+# ---------------------------------------------------------------------------
+
+@router.get("/cache/status", tags=["admin"])
+async def cache_status():
+    """Return metadata about currently cached keys."""
+    from app.services.offline_market_data import offline_market_data
+    meta = offline_market_data.get_cache_meta()
+    return {"cache_meta": meta, "timestamp": _now()}
+
+
+@router.post("/cache/eod-snapshot", tags=["admin"])
+async def trigger_eod_snapshot():
+    """
+    Manually trigger storing EOD snapshots.
+    (Normally called automatically after 15:30 IST by the scheduler.)
+    """
+    from app.services.offline_market_data import offline_market_data
+    from app.services.market_data import _cached
+    from app.services.market_session import market_session
+
+    stored = []
+    for key in ["market_overview", "stocks_quotes"]:
+        data = _cached(key)
+        if data:
+            offline_market_data.store_eod_snapshot(key, data)
+            stored.append(key)
+
+    logger.info("EOD snapshot triggered. Keys stored: %s", stored)
+    return {"message": "EOD snapshot stored", "keys": stored, "timestamp": _now()}

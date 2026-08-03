@@ -15,6 +15,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { fetchMarketOverview, fetchFutureStocks } from '../services/api';
 import { MarketStatusBadge } from './MarketStatusBadge';
+import { GlobalMarketStatus } from './GlobalMarketStatus';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
 import { markAllRead } from '../store';
 import type { StockResult } from '../utils/types';
@@ -142,6 +143,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, themeMode, onToggleThe
         </Box>
       )}
 
+      {/* Global Market Session Status Panel */}
+      <Box sx={{ px: 2, pb: 1.5 }}>
+        <GlobalMarketStatus variant="panel" />
+      </Box>
+
       <Divider />
 
       {/* Navigation List */}
@@ -219,7 +225,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, themeMode, onToggleThe
 
           {/* Market session status badge */}
           <Box sx={{ mx: 1 }}>
-            <MarketStatusBadge />
+            <GlobalMarketStatus variant="compact" />
           </Box>
 
           <Tooltip title="Notifications">

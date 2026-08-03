@@ -16,7 +16,7 @@
     }
   ],
   "env": {
-    "CORS_ORIGINS": "http://localhost:5173,http://localhost:3000"
+    "CORS_ORIGINS": "http://localhost:5173,http://localhost:3000,https://brave-success-production-6aea.up.railway.app"
   },
   "functions": {
     "api/index.py": {

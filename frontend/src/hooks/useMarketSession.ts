@@ -6,11 +6,11 @@
  *  - Updates marketSessionService singleton with server response
  *  - Schedules exact timers to fire at 09:15 and 15:30 IST for
  *    seamless automatic switching — no page refresh needed
- *  - Exposes: status, isOpen, dataSource, refetchInterval
+ *  - Exposes: status, isOpen, dataSource, refetchInterval, manualRefresh
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '../services/api';
+import { fetchMarketStatus } from '../services/api';
 import marketSessionService from '../services/marketSession';
 import type { MarketSessionStatus } from '../services/marketSession';
 
@@ -22,11 +22,11 @@ function nowIST(): Date {
 
 /** ms until next IST HH:MM today (or tomorrow if already past) */
 function msUntilIST(h: number, m: number): number {
-  const now     = nowIST();
-  const target  = new Date(now);
+  const now    = nowIST();
+  const target = new Date(now);
   target.setHours(h, m, 0, 0);
   let diff = target.getTime() - now.getTime();
-  if (diff <= 0) diff += 24 * 3_600_000;   // already past → next day
+  if (diff <= 0) diff += 24 * 3_600_000;  // already past → next day
   return diff;
 }
 
@@ -38,13 +38,15 @@ export function useMarketSession() {
     () => marketSessionService.getMarketStatus()
   );
 
-  // ── Server poll (every 30 s) ────────────────────────────────────────────
+  // ── Server poll (every 30 s during market hours, 60 s when closed) ──────
   const { data: raw, error } = useQuery({
     queryKey: ['market-status'],
-    queryFn:  () => api.get('/market-status').then(r => r.data),
-    refetchInterval: 30_000,
+    queryFn:  fetchMarketStatus,
+    refetchInterval: status.isOpen ? 30_000 : 60_000,
     staleTime:       25_000,
     retry: 2,
+    // Keep stale data visible while re-fetching
+    placeholderData: (prev) => prev,
   });
 
   // Update singleton + local state whenever server responds
@@ -59,18 +61,17 @@ export function useMarketSession() {
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scheduleTimers = useCallback(() => {
-    // Clear previous
     if (openTimerRef.current)  clearTimeout(openTimerRef.current);
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
 
-    // At 09:15 IST → invalidate market-status so queries re-fetch
+    // At 09:15 IST → invalidate so live data kicks in immediately
     openTimerRef.current = setTimeout(() => {
       queryClient.invalidateQueries({ queryKey: ['market-status'] });
       queryClient.invalidateQueries({ queryKey: ['market-overview'] });
-      scheduleTimers();   // reschedule for next day
+      scheduleTimers();  // reschedule for next day
     }, msUntilIST(9, 15));
 
-    // At 15:30 IST → same
+    // At 15:30 IST → switch to offline
     closeTimerRef.current = setTimeout(() => {
       queryClient.invalidateQueries({ queryKey: ['market-status'] });
       queryClient.invalidateQueries({ queryKey: ['market-overview'] });
@@ -89,12 +90,13 @@ export function useMarketSession() {
   // ── Derived helpers ────────────────────────────────────────────────────
   const isOpen          = status.isOpen;
   const dataSource      = status.dataSource;
-  const refetchInterval = status.refreshInterval * 1000; // ms
+  const refetchInterval = status.refreshInterval * 1000;  // ms
 
   const manualRefresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['market-status'] });
     queryClient.invalidateQueries({ queryKey: ['market-overview'] });
     queryClient.invalidateQueries({ queryKey: ['all-stocks'] });
+    queryClient.invalidateQueries({ queryKey: ['future-stocks'] });
   }, [queryClient]);
 
   return { status, isOpen, dataSource, refetchInterval, error, manualRefresh };
