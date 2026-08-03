@@ -151,6 +151,45 @@ export const fetchStockDetail    = async (symbol: string, tradeType = 'buy') =>
 export const fetchScanner        = async (minScore = 60, force = false): Promise<StocksResponse> =>
   (await apiSlow.get(`/scanner?min_score=${minScore}&force=${force}`)).data;
 
+// ── All Stocks (4000+ NSE/BSE universe) ───────────────────────────────────
+
+export interface AllStocksParams {
+  page?:         number;
+  limit?:        number;
+  search?:       string;
+  sector?:       string;
+  cap_category?: string;
+  signal?:       string;
+  min_score?:    number;
+  min_price?:    number;
+  max_price?:    number;
+  sort_by?:      'buy_score' | 'sell_score' | 'change_pct' | 'volume' | 'market_cap' | 'rsi' | 'symbol' | 'name';
+  sort_dir?:     'asc' | 'desc';
+}
+
+export const fetchAllStocks = async (params?: AllStocksParams): Promise<StocksResponse> => {
+  const q = new URLSearchParams();
+  if (params?.page)         q.set('page',         String(params.page));
+  if (params?.limit)        q.set('limit',        String(params.limit));
+  if (params?.search)       q.set('search',       params.search);
+  if (params?.sector)       q.set('sector',       params.sector);
+  if (params?.cap_category) q.set('cap_category', params.cap_category);
+  if (params?.signal)       q.set('signal',       params.signal);
+  if (params?.min_score != null) q.set('min_score', String(params.min_score));
+  if (params?.min_price != null) q.set('min_price', String(params.min_price));
+  if (params?.max_price != null) q.set('max_price', String(params.max_price));
+  if (params?.sort_by)      q.set('sort_by',      params.sort_by);
+  if (params?.sort_dir)     q.set('sort_dir',     params.sort_dir);
+  const qs = q.toString();
+  return (await apiSlow.get(`/all-stocks${qs ? `?${qs}` : ''}`)).data;
+};
+
+/** Lightweight master list for instant local Ctrl+K search (no price data) */
+export const fetchAllStocksMaster = async (search?: string): Promise<{ stocks: any[]; total: number }> => {
+  const qs = search ? `?search=${encodeURIComponent(search)}` : '';
+  return (await api.get(`/all-stocks/master${qs}`)).data;
+};
+
 // ── Formula ────────────────────────────────────────────────────────────────
 export const fetchFormulas = async () => (await api.get('/formula')).data;
 

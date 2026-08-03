@@ -111,6 +111,188 @@ def _filter_and_paginate(
     }
 
 
+# ── GET /all-stocks ────────────────────────────────────────────────────────
+
+@router.get("/all-stocks", tags=["screener"])
+async def get_all_stocks(
+    page:         int   = Query(1, ge=1),
+    limit:        int   = Query(25, le=200),
+    search:       Optional[str] = Query(None),
+    sector:       Optional[str] = Query(None),
+    cap_category: Optional[str] = Query(None),
+    signal:       Optional[str] = Query(None),
+    min_score:    float = Query(0),
+    min_price:    Optional[float] = Query(None),
+    max_price:    Optional[float] = Query(None),
+    sort_by:      str   = Query("buy_score"),
+    sort_dir:     str   = Query("desc"),
+):
+    """
+    Full NSE/BSE stock universe (4000+) with server-side pagination,
+    live search (symbol / name / sector), filters and sorting.
+
+    Strategy:
+    1. Try the live scan cache first (fastest – returns enriched StockData).
+    2. If a stock is not yet scanned, return a lightweight record from the
+       universe list (symbol, name, sector, cap_category) so the directory
+       is never empty.
+    """
+    from app.scanner.universe import get_full_universe
+    from app.scanner.scanner import _scan_cache   # noqa – internal cache
+
+    # ── 1. Build base list from universe (fast, 4000+ symbols) ──────────────
+    universe = get_full_universe()
+
+    # ── 2. Overlay any already-scanned enriched data ─────────────────────────
+    enriched: dict = {}
+    try:
+        if _scan_cache:
+            enriched = {r.symbol: r for r in _scan_cache}
+    except Exception:
+        pass
+
+    # Merge: scanned data wins; universe provides stub for un-scanned symbols
+    merged = []
+    for stock_info in universe:
+        if stock_info.symbol in enriched:
+            merged.append(enriched[stock_info.symbol])
+        else:
+            # Lightweight stub – price fields will be None / 0 for un-scanned
+            merged.append(stock_info)
+
+    # Also include any scanned symbols not in universe list
+    universe_syms = {s.symbol for s in universe}
+    for sym, result in enriched.items():
+        if sym not in universe_syms:
+            merged.append(result)
+
+    # ── 3. Apply filters ──────────────────────────────────────────────────────
+    if search:
+        q = search.lower().strip()
+        merged = [
+            r for r in merged
+            if q in r.symbol.lower()
+            or q in (r.name or "").lower()
+            or q in (r.sector or "").lower()
+            or q in (getattr(r, "industry", None) or "").lower()
+        ]
+
+    if sector and sector.upper() not in ("ALL", ""):
+        merged = [r for r in merged if (r.sector or "").lower() == sector.lower()]
+
+    if cap_category and cap_category.upper() not in ("ALL", ""):
+        cat = cap_category.strip().upper()
+        if "LARGE" in cat:
+            merged = [r for r in merged if (getattr(r, "cap_category", "") or "").upper() == "LARGE CAP"]
+        elif "MID" in cat:
+            merged = [r for r in merged if (getattr(r, "cap_category", "") or "").upper() == "MID CAP"]
+        elif "SMALL" in cat:
+            merged = [r for r in merged if (getattr(r, "cap_category", "") or "").upper() == "SMALL CAP"]
+        elif "F&O" in cat or "FO" in cat:
+            merged = [r for r in merged if getattr(r, "fo_eligible", False)]
+
+    if signal and signal.upper() not in ("ALL", ""):
+        sig = signal.strip().upper()
+        merged = [r for r in merged if (getattr(r, "signal", None) or "").upper() == sig]
+
+    if min_score > 0:
+        merged = [r for r in merged if (getattr(r, "buy_score", 0) or 0) >= min_score]
+
+    if min_price is not None:
+        merged = [r for r in merged if (getattr(r, "current_price", 0) or 0) >= min_price]
+
+    if max_price is not None:
+        merged = [r for r in merged if (getattr(r, "current_price", 0) or 0) <= max_price]
+
+    # ── 4. Sort ───────────────────────────────────────────────────────────────
+    reverse = sort_dir.lower() != "asc"
+    sort_fields = {
+        "buy_score":  lambda r: getattr(r, "buy_score", 0) or 0,
+        "sell_score": lambda r: getattr(r, "sell_score", 0) or 0,
+        "change_pct": lambda r: getattr(r, "change_pct", 0) or 0,
+        "volume":     lambda r: getattr(r, "volume", 0) or 0,
+        "market_cap": lambda r: getattr(r, "market_cap", 0) or 0,
+        "rsi":        lambda r: getattr(r, "rsi", 0) or 0,
+        "symbol":     lambda r: r.symbol,
+        "name":       lambda r: r.name or r.symbol,
+    }
+    key_fn = sort_fields.get(sort_by, sort_fields["buy_score"])
+    try:
+        merged.sort(key=key_fn, reverse=reverse)
+    except Exception:
+        pass
+
+    # ── 5. Paginate ───────────────────────────────────────────────────────────
+    total = len(merged)
+    start = (page - 1) * limit
+    page_items = merged[start: start + limit]
+
+    def _to_dict(r):
+        if hasattr(r, "dict"):
+            return r.dict()
+        # StockInfo stub
+        return {
+            "symbol":       r.symbol,
+            "name":         r.name,
+            "sector":       r.sector,
+            "industry":     getattr(r, "industry", r.sector),
+            "cap_category": getattr(r, "cap_category", "Mid Cap"),
+            "fo_eligible":  getattr(r, "fo_eligible", False),
+            "index":        getattr(r, "index", "NSE"),
+            "current_price": 0,
+            "change_pct":   0,
+            "buy_score":    0,
+            "signal":       "—",
+            "confidence_score": 0,
+        }
+
+    return {
+        "stocks":    [_to_dict(r) for r in page_items],
+        "total":     total,
+        "page":      page,
+        "limit":     limit,
+        "pages":     (total + limit - 1) // limit,
+        "timestamp": _now(),
+    }
+
+
+# ── GET /all-stocks/master ─────────────────────────────────────────────────
+
+@router.get("/all-stocks/master", tags=["screener"])
+async def get_all_stocks_master(
+    search: Optional[str] = Query(None),
+):
+    """
+    Lightweight master list of all symbols (no price data).
+    Used by the frontend to cache 4000+ symbol names for instant local search.
+    Returns: [{symbol, name, sector, cap_category, fo_eligible}]
+    """
+    from app.scanner.universe import get_full_universe
+    universe = get_full_universe()
+
+    if search:
+        q = search.lower().strip()
+        universe = [
+            s for s in universe
+            if q in s.symbol.lower() or q in s.name.lower() or q in s.sector.lower()
+        ]
+
+    return {
+        "stocks": [
+            {
+                "symbol":       s.symbol,
+                "name":         s.name,
+                "sector":       s.sector,
+                "industry":     getattr(s, "industry", s.sector),
+                "cap_category": getattr(s, "cap_category", "Mid Cap"),
+                "fo_eligible":  getattr(s, "fo_eligible", False),
+            }
+            for s in universe
+        ],
+        "total": len(universe),
+    }
+
+
 # ── GET /future-stocks ─────────────────────────────────────────────────────
 
 @router.get("/future-stocks", tags=["screener"])
