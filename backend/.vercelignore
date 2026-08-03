@@ -1,0 +1,27 @@
+# Virtual environment – never deploy this
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Local config
+.env
+*.local
+
+# Dev tools
+.git/
+.gitignore
+Dockerfile
+Procfile
+railway.toml
+
+# Docs / tests
+*.md
+tests/
+test_*.py

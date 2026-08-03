@@ -14,6 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source
 COPY app/ ./app/
+COPY symbols.py .
+COPY data_service.py .
 
 # Expose port
 EXPOSE 8000

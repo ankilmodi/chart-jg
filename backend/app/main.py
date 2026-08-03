@@ -35,6 +35,9 @@ _raw_origins = os.getenv(
 
 ALLOWED_ORIGINS = [o.strip() for o in _raw_origins if o.strip()]
 
+# Always allow Vercel preview deployments (*.vercel.app)
+ALLOWED_ORIGIN_REGEX = r"https://.*\.vercel\.app"
+
 
 # ---------------------------------------------------------------------------
 # Background warmup – runs scan once at startup so first API call is instant
@@ -58,8 +61,9 @@ async def _warmup():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting Nifty Future Analyzer API…")
-    # Start background warmup – doesn't block server startup
-    asyncio.create_task(_warmup())
+    # Skip background warmup on Vercel – serverless has no persistent event loop
+    if not os.getenv("VERCEL"):
+        asyncio.create_task(_warmup())
     yield
     logger.info("Shutting down…")
 
@@ -83,6 +87,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=ALLOWED_ORIGIN_REGEX,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
