@@ -760,6 +760,37 @@ async def export_csv(min_score: float = Query(0)):
     )
 
 
+# ── GET /market-status ────────────────────────────────────────────────────
+
+@router.get("/market-status", tags=["market"])
+async def get_market_status():
+    """
+    Returns current NSE/BSE market session status.
+
+    Response:
+      - is_open          : bool
+      - is_trading_day   : bool
+      - status           : "LIVE" | "CLOSED" | "PRE_OPEN" | "HOLIDAY"
+      - data_source      : "live" | "offline"
+      - message          : human-readable description
+      - current_time_ist : current IST timestamp
+      - refresh_interval : recommended polling interval (seconds)
+      - next_open        : ISO timestamp of next market open (if closed)
+      - holiday_name     : name of today's holiday (if applicable)
+    """
+    from app.services.market_session import market_session
+    status = market_session.get_market_status()
+    return status.to_dict()
+
+
+@router.post("/market-status/reload-holidays", tags=["admin"])
+async def reload_holidays():
+    """Hot-reload the holidays.json without restarting the server."""
+    from app.services.market_session import market_session
+    count = market_session.reload_holidays()
+    return {"message": f"Reloaded {count} holidays", "timestamp": _now()}
+
+
 # ── POST /cache/clear ──────────────────────────────────────────────────────
 
 @router.post("/cache/clear", tags=["admin"])

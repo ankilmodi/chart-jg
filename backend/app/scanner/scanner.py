@@ -33,7 +33,20 @@ IST = pytz.timezone("Asia/Kolkata")
 _scan_cache: Optional[List[ScanResult]] = None
 _scan_cache_time: float = 0
 _scan_running: bool = False
-SCAN_TTL = 300   # 5 min
+
+# Session-aware cache TTL: 60s when market is live, 300s when closed
+SCAN_TTL_LIVE   = 60    # 1 min during market hours
+SCAN_TTL_CLOSED = 300   # 5 min outside market hours
+SCAN_TTL        = SCAN_TTL_CLOSED  # default; overridden at runtime
+
+
+def _get_scan_ttl() -> int:
+    """Return appropriate scan TTL based on market session."""
+    try:
+        from app.services.market_session import market_session
+        return SCAN_TTL_LIVE if market_session.is_market_open() else SCAN_TTL_CLOSED
+    except Exception:
+        return SCAN_TTL_CLOSED
 
 
 def _now_str() -> str:
@@ -45,11 +58,17 @@ def _ist_now() -> datetime:
 
 
 def is_market_open() -> bool:
-    now = _ist_now()
-    if now.weekday() >= 5:
-        return False
-    t = now.hour * 60 + now.minute
-    return (9 * 60 + 15) <= t <= (15 * 60 + 30)
+    """Delegates to MarketSessionService for consistent holiday-aware logic."""
+    try:
+        from app.services.market_session import market_session
+        return market_session.is_market_open()
+    except Exception:
+        # Fallback: simple weekday + time check
+        now = _ist_now()
+        if now.weekday() >= 5:
+            return False
+        t = now.hour * 60 + now.minute
+        return (9 * 60 + 15) <= t <= (15 * 60 + 30)
 
 
 def get_market_overview() -> MarketOverview:
@@ -65,12 +84,20 @@ def get_market_overview() -> MarketOverview:
     bn_chg   = bn_snap["change_pct"] if bn_snap else None
 
     from app.scanner.market_data import _last_known
-    if price is not None:
-        data_source = "live"
-    elif "^NSEI" in _last_known:
-        data_source = "last_known"
-    else:
-        data_source = "unavailable"
+    # Use MarketSessionService for authoritative data_source
+    try:
+        from app.services.market_session import market_session
+        ms = market_session.get_market_status()
+        data_source = ms.data_source if price is None else "live"
+        if price is None and "^NSEI" in _last_known:
+            data_source = "last_known"
+    except Exception:
+        if price is not None:
+            data_source = "live"
+        elif "^NSEI" in _last_known:
+            data_source = "last_known"
+        else:
+            data_source = "unavailable"
 
     ema20 = ema50 = ema200 = vwap_val = None
     above_ema20 = above_ema50 = above_ema200 = above_vwap = False
@@ -291,7 +318,8 @@ def run_full_scan(force: bool = False, trade_type: str = "buy") -> List[ScanResu
     """Run full scan of all ~209 F&O stocks for buy or sell trade direction."""
     global _scan_cache, _scan_cache_time, _scan_running
 
-    if not force and _scan_cache and (time.time() - _scan_cache_time) < SCAN_TTL:
+    ttl = _get_scan_ttl()
+    if not force and _scan_cache and (time.time() - _scan_cache_time) < ttl:
         # Re-build target trade direction if requested
         return _sort_results(_scan_cache, trade_type)
 

@@ -14,6 +14,7 @@ import {
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { fetchMarketOverview, fetchFutureStocks } from '../services/api';
+import { MarketStatusBadge } from './MarketStatusBadge';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
 import { markAllRead } from '../store';
 import type { StockResult } from '../utils/types';
@@ -215,6 +216,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, themeMode, onToggleThe
               )}
             </Box>
           )}
+
+          {/* Market session status badge */}
+          <Box sx={{ mx: 1 }}>
+            <MarketStatusBadge />
+          </Box>
 
           <Tooltip title="Notifications">
             <IconButton onClick={() => { navigate('/watchlist'); dispatch(markAllRead()); }}>
