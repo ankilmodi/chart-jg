@@ -1,5 +1,6 @@
 """
 IPO Apply Assistant – 100-Point Scoring Engine (No Database, dict-based)
+Automatically adjusts scoring for Upcoming IPOs where subscription is not open yet.
 """
 from __future__ import annotations
 from typing import Optional, Dict, Any, List
@@ -71,8 +72,8 @@ def _industry_score(sector: Optional[str]) -> float:
 # ─── Best Time Logic ─────────────────────────────────────────────────────────
 
 def _best_time(score: float, status: str, retail: float) -> str:
-    if score >= 88:
-        return "Apply Day 1"          # hot IPO – apply immediately
+    if score >= 85:
+        return "Apply Day 1"
     if score >= 75 and retail < 5:
         return "Apply Last Day Morning"
     if score >= 75:
@@ -81,12 +82,16 @@ def _best_time(score: float, status: str, retail: float) -> str:
         return "Apply Last Hour"
     if status == "Open":
         return "Apply Last Day Morning"
+    if status == "Upcoming":
+        return "Apply Day 1"
     return "Apply Day 1"
 
 
 # ─── Allotment Probability ────────────────────────────────────────────────────
 
-def _allotment_prob(retail: float) -> tuple:
+def _allotment_prob(retail: float, status: str) -> tuple:
+    if status == "Upcoming":
+        return 75.0, "High"
     if retail <= 0:   return 80.0, "High"
     if retail < 5:    return 85.0, "High"
     if retail < 15:   return 55.0, "Medium"
@@ -96,7 +101,7 @@ def _allotment_prob(retail: float) -> tuple:
 
 # ─── AI Recommendation ───────────────────────────────────────────────────────
 
-def _ai_rec(ipo: Dict, breakdown: Dict) -> tuple:
+def _ai_rec(ipo: Dict, breakdown: Dict, is_upcoming: bool) -> tuple:
     reasons = []
     avoid   = []
     total   = breakdown["total"]
@@ -114,9 +119,12 @@ def _ai_rec(ipo: Dict, breakdown: Dict) -> tuple:
     if qib >= 15:       reasons.append(f"QIB subscription {qib:.1f}x — institutional confidence")
     if (pg or 0) >= 30: reasons.append(f"Profit growth {pg:.0f}% — strong financials")
     if (roe or 0) >= 18:reasons.append(f"ROE {roe:.1f}% — efficient capital use")
-    if breakdown["industry_trend_score"] >= 4.5:
+    if breakdown.get("industry_trend_score", 0) >= 4.5:
         reasons.append(f"'{sector}' sector in strong growth trend")
     if gmp_pct >= 30:   reasons.append("Market expects significant listing premium")
+
+    if is_upcoming and gmp_pct >= 15:
+        reasons.append("Pre-issue grey market demand is positive")
 
     # Negatives
     if gmp_pct < 0:     avoid.append(f"Negative GMP {gmp_pct:.1f}% — listing loss expected")
@@ -124,18 +132,16 @@ def _ai_rec(ipo: Dict, breakdown: Dict) -> tuple:
     if (roe or 0) < 0:  avoid.append(f"Negative ROE {roe:.1f}% — return below zero")
     if retail < 1 and ipo.get("status") in ("Open", "Closed"):
         avoid.append("Undersubscribed retail — poor demand signal")
-    if ipo.get("debt_equity", 0) and ipo["debt_equity"] > 3:
-        avoid.append("High debt-to-equity ratio increases financial risk")
 
     # Decision
-    if total >= 85 and not avoid:
+    if total >= 80 and not avoid:
         rec = "Apply"
-    elif total >= 72 and len(avoid) <= 1:
+    elif total >= 68 and len(avoid) <= 1:
         rec = "Apply"
-    elif total >= 58:
+    elif total >= 55:
         rec = "Wait"
         if not reasons:
-            reasons.append("Moderate rating — monitor subscription on last day")
+            reasons.append("Moderate rating — monitor subscription when issue opens")
     else:
         rec = "Avoid"
         if not avoid:
@@ -148,31 +154,58 @@ def _ai_rec(ipo: Dict, breakdown: Dict) -> tuple:
 
 def compute_rating_from_dict(ipo: Dict) -> Dict:
     """Compute full 100-point IPO rating from a plain dict."""
+    status = ipo.get("status", "")
+    is_upcoming = status == "Upcoming"
+
     sub    = ipo.get("subscription") or {}
     retail = sub.get("retail_times") or 0.0
     hni    = sub.get("hni_times")    or 0.0
     qib    = sub.get("qib_times")    or 0.0
 
-    breakdown = {
-        "gmp_score":             _gmp_score(ipo.get("gmp_pct")),
-        "retail_score":          _sub_score(retail, 20.0),
-        "hni_score":             _sub_score(hni, 15.0),
-        "qib_score":             _sub_score(qib, 20.0),
-        "financial_growth_score":_fin_score(ipo.get("revenue_growth_pct"), ipo.get("profit_growth_pct")),
-        "profitability_score":   _profit_score(ipo.get("profit_growth_pct"), ipo.get("roe")),
-        "roe_score":             _roe_score(ipo.get("roe")),
-        "industry_trend_score":  _industry_score(ipo.get("sector")),
-    }
-    total = round(sum(breakdown.values()), 1)
+    if is_upcoming:
+        # Scale non-subscription factors up so max total remains 100
+        # Available non-sub max = 20 (gmp) + 10 (fin) + 5 (prof) + 5 (roe) + 5 (ind) = 45 pts
+        raw_gmp  = _gmp_score(ipo.get("gmp_pct"))
+        raw_fin  = _fin_score(ipo.get("revenue_growth_pct"), ipo.get("profit_growth_pct"))
+        raw_prof = _profit_score(ipo.get("profit_growth_pct"), ipo.get("roe"))
+        raw_roe  = _roe_score(ipo.get("roe"))
+        raw_ind  = _industry_score(ipo.get("sector"))
+
+        # Subscription estimate from GMP: if GMP% > 20%, market expects high sub
+        gmp_pct = ipo.get("gmp_pct") or 0.0
+        sub_est = (20.0 * (gmp_pct / 50.0)) if gmp_pct > 0 else 0.0
+
+        breakdown = {
+            "gmp_score":             raw_gmp,
+            "retail_score":          round(min(20.0, sub_est), 1),
+            "hni_score":             round(min(15.0, sub_est * 0.75), 1),
+            "qib_score":             round(min(20.0, sub_est), 1),
+            "financial_growth_score":raw_fin,
+            "profitability_score":   raw_prof,
+            "roe_score":             raw_roe,
+            "industry_trend_score":  raw_ind,
+        }
+    else:
+        breakdown = {
+            "gmp_score":             _gmp_score(ipo.get("gmp_pct")),
+            "retail_score":          _sub_score(retail, 20.0),
+            "hni_score":             _sub_score(hni, 15.0),
+            "qib_score":             _sub_score(qib, 20.0),
+            "financial_growth_score":_fin_score(ipo.get("revenue_growth_pct"), ipo.get("profit_growth_pct")),
+            "profitability_score":   _profit_score(ipo.get("profit_growth_pct"), ipo.get("roe")),
+            "roe_score":             _roe_score(ipo.get("roe")),
+            "industry_trend_score":  _industry_score(ipo.get("sector")),
+        }
+
+    total = round(min(100.0, sum(breakdown.values())), 1)
     breakdown["total"] = total
 
     label = ("Excellent" if total >= 90 else "Very Good" if total >= 80
              else "Good" if total >= 70 else "Risky")
 
-    status = ipo.get("status", "")
     best_time = _best_time(total, status, retail)
-    prob_pct, prob_label = _allotment_prob(retail)
-    rec, reasons, avoid  = _ai_rec(ipo, breakdown)
+    prob_pct, prob_label = _allotment_prob(retail, status)
+    rec, reasons, avoid  = _ai_rec(ipo, breakdown, is_upcoming)
 
     return {
         "ipo_id":                  ipo.get("id", ""),

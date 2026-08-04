@@ -266,7 +266,11 @@ export default function IPODashboard() {
                       ) : '—'}
                     </TableCell>
                     <TableCell>
-                      <Typography variant="body2" color="text.secondary">—</Typography>
+                      <Typography variant="body2" fontWeight={600} color="text.primary">
+                        {(ipo as any).subscription?.total_times != null
+                          ? `${(ipo as any).subscription.total_times.toFixed(1)}x`
+                          : '—'}
+                      </Typography>
                     </TableCell>
                     <TableCell>
                       <IPORatingBadge score={ipo.rating} label={ipo.rating_label} size="small" />
