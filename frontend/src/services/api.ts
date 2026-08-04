@@ -8,7 +8,8 @@ import type {
   NotificationResponse, MarketOverview,
 } from '../utils/types';
 
-const BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const BASE_URL = import.meta.env.VITE_API_URL ||
+  (import.meta.env.MODE === 'development' ? '/api' : 'https://brave-success-production-6aea.up.railway.app/api');
 
 export const api = axios.create({
   baseURL: BASE_URL,
