@@ -84,15 +84,15 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS - Allow all origins
+# CORS - Allow 100% all origins worldwide
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=ALLOWED_ORIGIN_REGEX,
+    allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # Routes
 app.include_router(router,         prefix="/api")
