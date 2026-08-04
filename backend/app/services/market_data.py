@@ -114,10 +114,60 @@ def _fetch_yfinance_daily(period: str = "200d") -> Optional[pd.DataFrame]:
 
 
 def _fetch_yfinance_snapshot() -> Optional[dict]:
-    """
-    Get current quote using yfinance 1.x Ticker.fast_info.
-    fast_info is a LazyFastInfo object (NOT a dict) – use getattr, not .get().
-    """
+    """Get current quote for NIFTY 50 index using official NSE India & direct Yahoo Chart API."""
+    import requests
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+
+    # 1. Try official NSE India direct API first
+    try:
+        session = requests.Session()
+        session.headers.update(headers)
+        session.headers.update({'Referer': 'https://www.nseindia.com/'})
+        session.get('https://www.nseindia.com', timeout=4)
+        r = session.get('https://www.nseindia.com/api/allIndices', timeout=6)
+        if r.status_code == 200:
+            for item in r.json().get('data', []):
+                if item.get('index') == 'NIFTY 50':
+                    last = float(item.get('last', 0))
+                    prev = float(item.get('previousClose', 0)) or last
+                    open_val = float(item.get('open', 0)) or last
+                    high_val = float(item.get('high', 0)) or last
+                    low_val  = float(item.get('low', 0)) or last
+                    if last > 0:
+                        return {
+                            "price": last,
+                            "prev_close": prev,
+                            "open": open_val,
+                            "high": high_val,
+                            "low": low_val,
+                            "volume": 0,
+                        }
+    except Exception as e:
+        logger.debug("_fetch_yfinance_snapshot NSE error: %s", e)
+
+    # 2. Try Yahoo Direct Chart API
+    try:
+        url = 'https://query2.finance.yahoo.com/v8/finance/chart/^NSEI?interval=1d&range=5d'
+        r = requests.get(url, headers=headers, timeout=6)
+        if r.status_code == 200:
+            meta = r.json()['chart']['result'][0]['meta']
+            price = meta.get('regularMarketPrice')
+            prev  = meta.get('chartPreviousClose') or price
+            open_val = meta.get('regularMarketDayOpen') or price
+            high_val = meta.get('regularMarketDayHigh') or price
+            low_val  = meta.get('regularMarketDayLow') or price
+            if price and price > 0:
+                return {
+                    "price": price,
+                    "prev_close": prev,
+                    "open": open_val,
+                    "high": high_val,
+                    "low": low_val,
+                    "volume": 0,
+                }
+    except Exception as e:
+        logger.debug("_fetch_yfinance_snapshot Yahoo error: %s", e)
+
     try:
         import yfinance as yf
         ticker = yf.Ticker(NIFTY_TICKER)
