@@ -1,3 +1,4 @@
+# v2.1.0 - all-stocks, top-buyers, top-sellers, volume-best, monthly-buy endpoints
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
 pydantic==2.10.2
