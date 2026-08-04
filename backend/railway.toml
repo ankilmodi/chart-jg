@@ -3,7 +3,7 @@ builder = "nixpacks"
 # Force rebuild: all-stocks, top-buyers, top-sellers, volume-best, monthly-buy endpoints added
 
 [deploy]
-startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 75"
+startCommand = "sh -c 'uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --timeout-keep-alive 75'"
 healthcheckPath = "/"
 healthcheckTimeout = 600
 restartPolicyType = "on_failure"
