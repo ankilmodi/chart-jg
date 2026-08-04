@@ -44,7 +44,8 @@ ALLOWED_ORIGIN_REGEX = r"https://.*\.vercel\.app"
 # ---------------------------------------------------------------------------
 async def _warmup():
     """Pre-warm the scan cache in background after server starts."""
-    await asyncio.sleep(2)   # let server finish startup first
+    await asyncio.sleep(60)   # let server finish startup & healthcheck first
+
     try:
         logger.info("Warming up scan cache in background…")
         from app.scanner.scanner import run_full_scan
