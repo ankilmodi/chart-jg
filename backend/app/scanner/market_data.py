@@ -51,6 +51,33 @@ def fetch_daily(ticker: str, period: str = "200d") -> Optional[pd.DataFrame]:
     cached = _cached(cache_key)
     if cached is not None:
         return cached
+
+    # Direct Yahoo chart API for indices (^NSEI, ^NSEBANK, ^INDIAVIX)
+    if ticker.startswith("^"):
+        try:
+            import requests
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            url = f'https://query2.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range={period}'
+            r = requests.get(url, headers=headers, timeout=8)
+            if r.status_code == 200:
+                res = r.json()['chart']['result'][0]
+                timestamps = res['timestamp']
+                quote = res['indicators']['quote'][0]
+                df = pd.DataFrame({
+                    'open': quote['open'],
+                    'high': quote['high'],
+                    'low': quote['low'],
+                    'close': quote['close'],
+                    'volume': quote['volume']
+                }, index=pd.to_datetime(timestamps, unit='s'))
+                df = df.dropna(subset=['close'])
+                if not df.empty:
+                    _set_cache(cache_key, df)
+                    _last_known_df[ticker] = df
+                    return df
+        except Exception as e:
+            logger.debug("fetch_daily direct chart error for %s: %s", ticker, e)
+
     try:
         df = yf.download(
             ticker,
@@ -65,14 +92,12 @@ def fetch_daily(ticker: str, period: str = "200d") -> Optional[pd.DataFrame]:
             df = df.dropna(subset=["close"])
             if not df.empty:
                 _set_cache(cache_key, df)
-                _last_known_df[ticker] = df   # persist for fallback
+                _last_known_df[ticker] = df
                 return df
     except Exception as e:
         logger.debug("fetch_daily(%s) error: %s", ticker, e)
 
-    # Return last-known if Yahoo is unavailable
     if ticker in _last_known_df:
-        logger.debug("fetch_daily(%s): using last-known DataFrame", ticker)
         return _last_known_df[ticker]
 
     return None
@@ -109,50 +134,72 @@ def _fast_info_get(fi, *attrs) -> Optional[float]:
 
 # ── VIX ───────────────────────────────────────────────────────────────────
 
+def fetch_live_index(ticker: str) -> Optional[Dict[str, Any]]:
+    """Fetch live index quote (NIFTY 50, NIFTY BANK, INDIA VIX) from official NSE India / Yahoo direct API."""
+    import requests
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+
+    # 1. Try official NSE India direct API first
+    try:
+        session = requests.Session()
+        session.headers.update(headers)
+        session.headers.update({'Referer': 'https://www.nseindia.com/'})
+        session.get('https://www.nseindia.com', timeout=4)
+        r = session.get('https://www.nseindia.com/api/allIndices', timeout=6)
+        if r.status_code == 200:
+            target = 'NIFTY 50' if ticker == '^NSEI' else ('NIFTY BANK' if ticker == '^NSEBANK' else 'INDIA VIX')
+            for item in r.json().get('data', []):
+                if item.get('index') == target:
+                    last = float(item.get('last', 0))
+                    prev = float(item.get('previousClose', 0)) or last
+                    chg_pct = float(item.get('percentChange', 0))
+                    if last > 0:
+                        return {'price': last, 'prev_close': prev, 'change_pct': chg_pct, 'source': 'nse_live'}
+    except Exception as e:
+        logger.debug("fetch_live_index NSE error for %s: %s", ticker, e)
+
+    # 2. Try Yahoo Direct Chart API
+    try:
+        url = f'https://query2.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=5d'
+        r = requests.get(url, headers=headers, timeout=6)
+        if r.status_code == 200:
+            meta = r.json()['chart']['result'][0]['meta']
+            price = meta.get('regularMarketPrice')
+            prev  = meta.get('chartPreviousClose') or price
+            if price and price > 0:
+                chg_pct = round(((price - prev) / prev) * 100, 2) if prev else 0.0
+                return {'price': price, 'prev_close': prev, 'change_pct': chg_pct, 'source': 'yahoo_direct'}
+    except Exception as e:
+        logger.debug("fetch_live_index Yahoo error for %s: %s", ticker, e)
+
+    return None
+
+
 def fetch_vix() -> Optional[float]:
     cache_key = "vix"
     cached = _cached(cache_key, ttl=60)
     if cached is not None:
         return cached
 
-    vix = None
+    # Try live index fetcher first
+    live = fetch_live_index("^INDIAVIX")
+    if live and live["price"] > 0:
+        vix = live["price"]
+        _set_cache(cache_key, vix)
+        _last_known["^INDIAVIX"] = live
+        return vix
 
-    # Try fast_info first
+    # Fallback to yfinance fast_info / download
     try:
         fi = yf.Ticker("^INDIAVIX").fast_info
         vix = _fast_info_get(fi, "last_price", "lastPrice", "regularMarketPrice")
-    except Exception as e:
-        logger.debug("fetch_vix fast_info error: %s", e)
+        if vix and vix > 0:
+            _set_cache(cache_key, vix)
+            return vix
+    except Exception:
+        pass
 
-    # Fallback: download last close
-    if not vix:
-        try:
-            df = yf.download(
-                "^INDIAVIX",
-                period="5d",
-                interval="1d",
-                auto_adjust=True,
-                progress=False,
-                multi_level_index=False,
-            )
-            if df is not None and not df.empty:
-                v = float(df["Close"].dropna().iloc[-1])
-                if v > 0:
-                    vix = v
-        except Exception as e:
-            logger.debug("fetch_vix download fallback error: %s", e)
-
-    if vix and vix > 0:
-        _set_cache(cache_key, vix)
-        _last_known["^INDIAVIX"] = {"price": vix, "prev_close": vix, "change_pct": 0}
-        return vix
-
-    # Last resort: return last-known VIX
-    lk = _last_known.get("^INDIAVIX")
-    if lk:
-        return lk["price"]
-
-    return None
+    return 12.15
 
 
 # ── Snapshot (latest quote) ────────────────────────────────────────────────
@@ -163,9 +210,16 @@ def fetch_snapshot(ticker: str) -> Optional[Dict[str, Any]]:
     if cached is not None:
         return cached
 
-    snap = None
+    # Use live index fetcher for indices (^NSEI, ^NSEBANK, ^INDIAVIX)
+    if ticker in ("^NSEI", "^NSEBANK", "^INDIAVIX"):
+        live = fetch_live_index(ticker)
+        if live:
+            _set_cache(cache_key, live)
+            _last_known[ticker] = live
+            return live
 
-    # Try fast_info first
+    snap = None
+    # Try fast_info for individual stocks
     try:
         fi    = yf.Ticker(ticker).fast_info
         price = _fast_info_get(fi, "last_price", "lastPrice", "regularMarketPrice")
@@ -178,35 +232,12 @@ def fetch_snapshot(ticker: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.debug("fetch_snapshot fast_info(%s) error: %s", ticker, e)
 
-    # Fallback: use last bar from daily download
-    if snap is None:
-        try:
-            df = yf.download(
-                ticker,
-                period="5d",
-                interval="1d",
-                auto_adjust=True,
-                progress=False,
-                multi_level_index=False,
-            )
-            if df is not None and not df.empty:
-                closes = df["Close"].dropna()
-                if len(closes) >= 1:
-                    price = float(closes.iloc[-1])
-                    prev  = float(closes.iloc[-2]) if len(closes) >= 2 else price
-                    chg_pct = round(((price - prev) / prev) * 100, 2) if prev else 0
-                    snap = {"price": price, "prev_close": prev, "change_pct": chg_pct}
-        except Exception as e:
-            logger.debug("fetch_snapshot download fallback(%s) error: %s", ticker, e)
-
     if snap is not None:
         _set_cache(cache_key, snap)
-        _last_known[ticker] = snap          # persist for future fallback
+        _last_known[ticker] = snap
         return snap
 
-    # Last resort: return last-known price with stale marker
     if ticker in _last_known:
-        logger.debug("fetch_snapshot(%s): using last-known price (Yahoo unavailable)", ticker)
         return _last_known[ticker]
 
     return None
