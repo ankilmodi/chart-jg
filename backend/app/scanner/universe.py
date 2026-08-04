@@ -37,9 +37,17 @@ def _sector_for_symbol(sym: str) -> str:
     return "Diversified"
 
 
+_UNIVERSE_CACHE: Optional[List[StockInfo]] = None
+
+
 def get_full_universe() -> List[StockInfo]:
+    global _UNIVERSE_CACHE
+    if _UNIVERSE_CACHE is not None:
+        return _UNIVERSE_CACHE
+
     seen = set()
     result: List[StockInfo] = []
+
 
     # 1. Large Cap
     for ticker in LARGE_CAP_SYMBOLS:
@@ -105,7 +113,9 @@ def get_full_universe() -> List[StockInfo]:
                 fo_eligible=(sym in FO_SET),
             ))
 
+    _UNIVERSE_CACHE = result
     return result
+
 
 
 def get_by_cap_category(category: str) -> List[StockInfo]:
