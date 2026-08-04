@@ -41,6 +41,7 @@ export default function IPODashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
   const [viewMode, setViewMode] = useState<'card' | 'table'>('table');
+  const [issueType, setIssueType] = useState<string>('all');
   const [minGmp, setMinGmp]   = useState('');
   const [minRating, setMinRating] = useState('');
   const [sortBy, setSortBy]   = useState('rating');
@@ -59,8 +60,16 @@ export default function IPODashboard() {
         min_gmp: minGmp ? Number(minGmp) : undefined,
         min_rating: minRating ? Number(minRating) : undefined,
       };
-      if (isTypeBased) { params.type = activeTab.value; }
-      else if (activeTab.value) { params.status = activeTab.value; }
+
+      if (issueType !== 'all') {
+        params.type = issueType;
+      } else if (isTypeBased) {
+        params.type = activeTab.value;
+      }
+
+      if (activeTab.value && !isTypeBased) {
+        params.status = activeTab.value;
+      }
 
       const data = await fetchIPOList(params);
       let list: IPOMaster[] = data.ipos || [];
@@ -80,7 +89,7 @@ export default function IPODashboard() {
     } finally {
       setLoading(false);
     }
-  }, [tabIdx, search, minGmp, minRating, sortBy, page, activeTab]);
+  }, [tabIdx, search, minGmp, minRating, sortBy, page, activeTab, issueType]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -162,11 +171,19 @@ export default function IPODashboard() {
             sx={{ minWidth: 260 }}
             InputProps={{ startAdornment: <InputAdornment position="start"><Search fontSize="small" /></InputAdornment> }}
           />
+          <FormControl size="small" sx={{ minWidth: 140 }}>
+            <InputLabel>IPO Type</InputLabel>
+            <Select value={issueType} label="IPO Type" onChange={e => { setIssueType(e.target.value); setPage(1); }}>
+              <MenuItem value="all">All Types</MenuItem>
+              <MenuItem value="mainboard">Mainboard</MenuItem>
+              <MenuItem value="sme">SME</MenuItem>
+            </Select>
+          </FormControl>
           <TextField size="small" label="Min GMP%" type="number" value={minGmp}
-            onChange={e => setMinGmp(e.target.value)} sx={{ width: 120 }} />
+            onChange={e => setMinGmp(e.target.value)} sx={{ width: 110 }} />
           <TextField size="small" label="Min Rating" type="number" value={minRating}
-            onChange={e => setMinRating(e.target.value)} sx={{ width: 120 }} />
-          <FormControl size="small" sx={{ minWidth: 130 }}>
+            onChange={e => setMinRating(e.target.value)} sx={{ width: 110 }} />
+          <FormControl size="small" sx={{ minWidth: 120 }}>
             <InputLabel>Sort By</InputLabel>
             <Select value={sortBy} label="Sort By" onChange={e => setSortBy(e.target.value)}>
               <MenuItem value="rating">Rating</MenuItem>
@@ -174,8 +191,8 @@ export default function IPODashboard() {
               <MenuItem value="name">Name</MenuItem>
             </Select>
           </FormControl>
-          {(search || minGmp || minRating) && (
-            <Button size="small" onClick={() => { setSearch(''); setMinGmp(''); setMinRating(''); }}>
+          {(search || minGmp || minRating || issueType !== 'all') && (
+            <Button size="small" onClick={() => { setSearch(''); setMinGmp(''); setMinRating(''); setIssueType('all'); }}>
               Clear Filters
             </Button>
           )}
