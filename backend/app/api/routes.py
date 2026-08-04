@@ -624,3 +624,201 @@ async def trigger_eod_snapshot():
 
     logger.info("EOD snapshot triggered. Keys stored: %s", stored)
     return {"message": "EOD snapshot stored", "keys": stored, "timestamp": _now()}
+
+
+# ---------------------------------------------------------------------------
+# All Stocks Directory – /api/all-stocks & /api/all-stocks/master
+# ---------------------------------------------------------------------------
+
+@router.get("/all-stocks", tags=["screener"])
+async def get_all_stocks(
+    page:         int   = Query(1, ge=1),
+    limit:        int   = Query(25, le=200),
+    search:       Optional[str] = Query(None),
+    sector:       Optional[str] = Query(None),
+    cap_category: Optional[str] = Query(None),
+    signal:       Optional[str] = Query(None),
+    min_score:    float = Query(0),
+    min_price:    Optional[float] = Query(None),
+    max_price:    Optional[float] = Query(None),
+    sort_by:      str   = Query("buy_score"),
+    sort_dir:     str   = Query("desc"),
+):
+    """
+    Full NSE/BSE stock universe with server-side pagination, live search,
+    filters and sorting. Falls back to scanner cache if available.
+    """
+    from app.scanner.universe import get_full_universe
+    try:
+        from app.scanner.scanner import _scan_cache
+        enriched = {r.symbol: r for r in (_scan_cache or [])}
+    except Exception:
+        enriched = {}
+
+    universe = get_full_universe()
+    merged = []
+    for stock_info in universe:
+        if stock_info.symbol in enriched:
+            merged.append(enriched[stock_info.symbol])
+        else:
+            merged.append(stock_info)
+
+    universe_syms = {s.symbol for s in universe}
+    for sym, result in enriched.items():
+        if sym not in universe_syms:
+            merged.append(result)
+
+    # Filters
+    if search:
+        q = search.lower().strip()
+        merged = [s for s in merged if q in (getattr(s, 'symbol', '') or '').lower()
+                  or q in (getattr(s, 'name', '') or '').lower()
+                  or q in (getattr(s, 'sector', '') or '').lower()]
+    if sector:
+        merged = [s for s in merged if (getattr(s, 'sector', '') or '').lower() == sector.lower()]
+    if cap_category and cap_category.upper() != "ALL":
+        merged = [s for s in merged if (getattr(s, 'cap_category', '') or '').upper() == cap_category.upper()]
+    if signal:
+        merged = [s for s in merged if (getattr(s, 'signal', '') or '').upper() == signal.upper()]
+    if min_score:
+        merged = [s for s in merged if (getattr(s, 'buy_score', 0) or 0) >= min_score]
+    if min_price is not None:
+        merged = [s for s in merged if (getattr(s, 'current_price', None) or getattr(s, 'price', None) or 0) >= min_price]
+    if max_price is not None:
+        merged = [s for s in merged if (getattr(s, 'current_price', None) or getattr(s, 'price', None) or 0) <= max_price]
+
+    # Sort
+    reverse = sort_dir.lower() != "asc"
+    try:
+        merged.sort(key=lambda s: getattr(s, sort_by, 0) or 0, reverse=reverse)
+    except Exception:
+        pass
+
+    total = len(merged)
+    start = (page - 1) * limit
+    paginated = merged[start: start + limit]
+
+    def _to_dict(s):
+        try:
+            return s.dict()
+        except Exception:
+            return {
+                "symbol": getattr(s, "symbol", ""),
+                "name": getattr(s, "name", ""),
+                "sector": getattr(s, "sector", ""),
+                "cap_category": getattr(s, "cap_category", ""),
+                "fo_eligible": getattr(s, "fo_eligible", False),
+                "current_price": getattr(s, "current_price", None),
+                "buy_score": getattr(s, "buy_score", 0),
+                "sell_score": getattr(s, "sell_score", 0),
+                "signal": getattr(s, "signal", None),
+                "change_pct": getattr(s, "change_pct", None),
+            }
+
+    return {
+        "stocks": [_to_dict(s) for s in paginated],
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "timestamp": _now(),
+    }
+
+
+@router.get("/all-stocks/master", tags=["screener"])
+async def get_all_stocks_master(search: Optional[str] = Query(None)):
+    """Lightweight master list of all symbols (no price data) for instant local search."""
+    from app.scanner.universe import get_full_universe
+    universe = get_full_universe()
+    if search:
+        q = search.lower().strip()
+        universe = [s for s in universe if q in s.symbol.lower() or q in s.name.lower()]
+    return {
+        "stocks": [{"symbol": s.symbol, "name": s.name, "sector": s.sector,
+                    "cap_category": s.cap_category, "fo_eligible": getattr(s, 'fo_eligible', False)}
+                   for s in universe],
+        "total": len(universe),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Missing screener endpoints – top-buyers, top-sellers, volume-best, monthly-buy
+# ---------------------------------------------------------------------------
+
+@router.get("/top-buyers", tags=["screener"])
+async def get_top_buyers_endpoint(
+    limit: int = Query(25),
+    trade_type: str = Query("buy"),
+    cap_category: Optional[str] = Query(None),
+):
+    """Top Buyers: Stocks with highest positive Change % & Aggressive Buying Pressure."""
+    from app.scanner.scanner import run_full_scan, get_top_buyers
+    results = run_full_scan()
+    filtered = get_top_buyers(results, limit=limit * 2)
+    if cap_category and cap_category.upper() != "ALL":
+        filtered = [r for r in filtered if (r.cap_category or "").upper() == cap_category.upper()]
+    return {"stocks": [r.dict() for r in filtered[:limit]], "total": len(filtered), "timestamp": _now()}
+
+
+@router.get("/top-sellers", tags=["screener"])
+async def get_top_sellers_endpoint(
+    limit: int = Query(25),
+    trade_type: str = Query("sell"),
+    cap_category: Optional[str] = Query(None),
+):
+    """Top Sellers: Stocks with highest negative Change % & Aggressive Selling Pressure."""
+    from app.scanner.scanner import run_full_scan, get_top_sellers
+    results = run_full_scan()
+    filtered = get_top_sellers(results, limit=limit * 2)
+    if cap_category and cap_category.upper() != "ALL":
+        filtered = [r for r in filtered if (r.cap_category or "").upper() == cap_category.upper()]
+    return {"stocks": [r.dict() for r in filtered[:limit]], "total": len(filtered), "timestamp": _now()}
+
+
+@router.get("/volume-best", tags=["screener"])
+async def get_volume_best_endpoint(
+    limit: int = Query(25),
+    cap_category: Optional[str] = Query(None),
+):
+    """Top Volume Best Stocks with highest institutional volume activity."""
+    from app.scanner.scanner import run_full_scan, get_volume_best
+    results = run_full_scan()
+    filtered = get_volume_best(results, limit=limit * 2)
+    if cap_category and cap_category.upper() != "ALL":
+        filtered = [r for r in filtered if (r.cap_category or "").upper() == cap_category.upper()]
+    return {"stocks": [r.dict() for r in filtered[:limit]], "total": len(filtered), "timestamp": _now()}
+
+
+@router.get("/monthly-buy", tags=["screener"])
+async def get_monthly_buy_endpoint(
+    limit: int = Query(25),
+    trade_type: str = Query("buy"),
+    cap_category: Optional[str] = Query(None),
+):
+    """Monthly Position picks (1–4 week hold): Perfect EMA200 long-term trend alignment."""
+    from app.scanner.scanner import run_full_scan, get_monthly_buy
+    results = run_full_scan()
+    filtered = get_monthly_buy(results, limit=limit * 2, trade_type=trade_type)
+    if cap_category and cap_category.upper() != "ALL":
+        filtered = [r for r in filtered if (r.cap_category or "").upper() == cap_category.upper()]
+    return {"stocks": [r.dict() for r in filtered[:limit]], "total": len(filtered), "timestamp": _now()}
+
+
+# ---------------------------------------------------------------------------
+# Market Status endpoint (used by frontend)
+# ---------------------------------------------------------------------------
+
+@router.get("/market-status", tags=["market"])
+async def get_market_status():
+    """Market open/closed status with IST time."""
+    try:
+        from app.services.market_session import market_session
+        session = market_session.get_session_status()
+        return {
+            "is_open": session.is_open,
+            "status": session.status,
+            "message": session.message,
+            "timestamp": _now(),
+        }
+    except Exception as e:
+        return {"is_open": False, "status": "unknown", "message": str(e), "timestamp": _now()}
+
