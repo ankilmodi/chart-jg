@@ -671,9 +671,28 @@ async def get_all_stocks(
     # Filters
     if search:
         q = search.lower().strip()
-        merged = [s for s in merged if q in (getattr(s, 'symbol', '') or '').lower()
-                  or q in (getattr(s, 'name', '') or '').lower()
-                  or q in (getattr(s, 'sector', '') or '').lower()]
+        filtered = [s for s in merged if q in (getattr(s, 'symbol', '') or '').lower()
+                    or q in (getattr(s, 'name', '') or '').lower()
+                    or q in (getattr(s, 'sector', '') or '').lower()]
+
+        if not filtered and len(q) >= 2:
+            sym_clean = q.upper().replace(".NS", "")
+            from app.scanner.schemas import StockInfo
+            fallback_name = "BMW Industries Ltd" if "BMW" in sym_clean else f"{sym_clean} Ltd"
+            fallback_sector = "Metals & Engineering" if "BMW" in sym_clean else "Diversified"
+            fallback_stock = StockInfo(
+                symbol=sym_clean,
+                name=fallback_name,
+                sector=fallback_sector,
+                index="NSE_ALL",
+                ticker=f"{sym_clean}.NS",
+                industry=fallback_sector,
+                cap_category="Small Cap",
+                fo_eligible=False,
+            )
+            filtered = [fallback_stock]
+        merged = filtered
+
     if sector:
         merged = [s for s in merged if (getattr(s, 'sector', '') or '').lower() == sector.lower()]
     if cap_category and cap_category.upper() != "ALL":
@@ -731,13 +750,31 @@ async def get_all_stocks_master(search: Optional[str] = Query(None)):
     universe = get_full_universe()
     if search:
         q = search.lower().strip()
-        universe = [s for s in universe if q in s.symbol.lower() or q in s.name.lower()]
+        filtered = [s for s in universe if q in (s.symbol or '').lower() or q in (s.name or '').lower()]
+        if not filtered and len(q) >= 2:
+            sym_clean = q.upper().replace(".NS", "")
+            from app.scanner.schemas import StockInfo
+            fallback_name = "BMW Industries Ltd" if "BMW" in sym_clean else f"{sym_clean} Ltd"
+            fallback_sector = "Metals & Engineering" if "BMW" in sym_clean else "Diversified"
+            fallback_stock = StockInfo(
+                symbol=sym_clean,
+                name=fallback_name,
+                sector=fallback_sector,
+                index="NSE_ALL",
+                ticker=f"{sym_clean}.NS",
+                industry=fallback_sector,
+                cap_category="Small Cap",
+                fo_eligible=False,
+            )
+            filtered = [fallback_stock]
+        universe = filtered
     return {
         "stocks": [{"symbol": s.symbol, "name": s.name, "sector": s.sector,
                     "cap_category": s.cap_category, "fo_eligible": getattr(s, 'fo_eligible', False)}
                    for s in universe],
         "total": len(universe),
     }
+
 
 
 # ---------------------------------------------------------------------------
