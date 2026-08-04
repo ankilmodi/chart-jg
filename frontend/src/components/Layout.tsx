@@ -154,12 +154,39 @@ export const Layout: React.FC<LayoutProps> = ({ children, themeMode, onToggleThe
       {/* Navigation List */}
       <List dense sx={{ flex: 1, overflowY: 'auto', py: 1 }}>
         {menuItems.map(item => (
-          <ListItemButton key={item.path} sx={itemSx(item.path)} onClick={() => nav(item.path)}>
-            <ListItemIcon sx={{ minWidth: 36, color: 'inherit' }}>{item.icon}</ListItemIcon>
+          <ListItemButton key={item.path}
+            sx={{
+              ...itemSx(item.path),
+              ...(item.path === '/ipo' && !isActive('/ipo') ? {
+                background: themeMode === 'dark' ? 'linear-gradient(135deg, rgba(108, 99, 255, 0.15) 0%, rgba(67, 206, 162, 0.15) 100%)' : 'linear-gradient(135deg, #eef2ff 0%, #e6fffa 100%)',
+                border: '1px solid',
+                borderColor: themeMode === 'dark' ? 'rgba(108, 99, 255, 0.3)' : 'rgba(108, 99, 255, 0.2)',
+              } : {}),
+            }}
+            onClick={() => nav(item.path)}
+          >
+            <ListItemIcon sx={{ minWidth: 36, color: item.path === '/ipo' && !isActive('/ipo') ? '#6c63ff' : 'inherit' }}>
+              {item.icon}
+            </ListItemIcon>
             <ListItemText
               primary={item.label}
-              primaryTypographyProps={{ fontSize: 13, fontWeight: isActive(item.path) ? 700 : 600 }}
+              primaryTypographyProps={{ fontSize: 13, fontWeight: isActive(item.path) || item.path === '/ipo' ? 700 : 600 }}
             />
+            {item.path === '/ipo' && (
+              <Chip
+                label="LIVE"
+                size="small"
+                sx={{
+                  height: 18,
+                  fontSize: 9,
+                  fontWeight: 900,
+                  bgcolor: '#00c853',
+                  color: 'white',
+                  letterSpacing: 0.5,
+                  px: 0.5,
+                }}
+              />
+            )}
           </ListItemButton>
         ))}
       </List>
