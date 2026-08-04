@@ -40,6 +40,9 @@ const HistoryPage        = lazy(() => import('./pages/History'));
 const IndicatorsPage     = lazy(() => import('./pages/Indicators'));
 const BacktestPage       = lazy(() => import('./pages/Backtest'));
 const UniversePage       = lazy(() => import('./pages/Universe'));
+const IPODashboardPage   = lazy(() => import('./pages/IPODashboard'));
+const IPODetailPage       = lazy(() => import('./pages/IPODetail'));
+const IPOHistoryPage      = lazy(() => import('./pages/IPOHistory'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -100,6 +103,10 @@ const AppInner: React.FC = () => {
               <Route path="/indicators"      element={<IndicatorsPage />} />
               <Route path="/backtest"        element={<BacktestPage />} />
               <Route path="/universe"        element={<UniversePage />} />
+              {/* IPO Apply Assistant */}
+              <Route path="/ipo"             element={<IPODashboardPage />} />
+              <Route path="/ipo/history"     element={<IPOHistoryPage />} />
+              <Route path="/ipo/:ipo_id"     element={<IPODetailPage />} />
             </Routes>
           </Suspense>
         </Layout>

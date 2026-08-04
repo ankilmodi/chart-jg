@@ -10,7 +10,7 @@ import {
   Menu as MenuIcon, Dashboard as DashboardIcon, GridView, Star,
   TrendingUp, TrendingDown, DateRange, CalendarMonth, Bookmarks, Settings, Notifications,
   WbSunny, DarkMode, Analytics, Whatshot, Equalizer, Assessment,
-  History as HistoryIcon, Biotech, Science, Public, AccountTree
+  History as HistoryIcon, Biotech, Science, Public, AccountTree, RocketLaunch
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { fetchMarketOverview, fetchFutureStocks } from '../services/api';
@@ -73,6 +73,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, themeMode, onToggleThe
   const menuItems = [
     // ── Overview ───────────────────────────────────────────────────────────
     { label: 'Dashboard',            path: '/',              icon: <DashboardIcon fontSize="small" /> },
+    { label: 'IPO Apply Assistant', path: '/ipo',           icon: <RocketLaunch fontSize="small" /> },
     { label: 'All Stocks Directory', path: '/all-stocks',    icon: <GridView fontSize="small" /> },
     { label: 'F&O Stocks',           path: '/future-stocks', icon: <Analytics fontSize="small" /> },
     { label: 'Heat Map',             path: '/heatmap',       icon: <Whatshot fontSize="small" /> },

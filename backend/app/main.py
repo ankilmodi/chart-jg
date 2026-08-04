@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.routes import router
 from app.scanner.routes import router as scanner_router
+from app.ipo.routes import router as ipo_router
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -97,6 +98,7 @@ app.add_middleware(
 # Routes
 app.include_router(router,         prefix="/api")
 app.include_router(scanner_router, prefix="/api")
+app.include_router(ipo_router,     prefix="/api")
 
 
 # ---------------------------------------------------------------------------
@@ -143,5 +145,11 @@ async def root():
             "/api/formula",
             "/api/notifications",
             "/api/export/csv",
+            "/api/ipo/list",
+            "/api/ipo/{id}",
+            "/api/ipo/{id}/rating",
+            "/api/ipo/{id}/recommendation",
+            "/api/ipo/history/all",
+            "/api/ipo/notifications/all",
         ],
     }
