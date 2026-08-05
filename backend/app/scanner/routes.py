@@ -616,7 +616,7 @@ async def get_stock_detail(symbol: str, trade_type: str = Query("buy")):
             }, index=dates)
 
             ind = calculate_indicators(df_mock)
-            match = _build_result(stock_info, df_mock, ind, {}, True, 0.8, trade_type=trade_type)
+            match = _build_result(stock_info, df_mock, ind, {}, True, 0.8, trade_type=trade_str)
 
     if not match:
         raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")

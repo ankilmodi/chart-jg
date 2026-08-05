@@ -1012,7 +1012,7 @@ async def get_stock_detail(symbol: str, trade_type: str = Query("buy")):
     }, index=dates)
 
     ind = calculate_indicators(df)
-    result = _build_result(stock_info, df, ind, {}, True, 0.8, trade_type=trade_type)
+    result = _build_result(stock_info, df, ind, {}, True, 0.8, trade_type=trade_str)
     return result.dict()
 
 
