@@ -216,6 +216,23 @@ export const exportCSV = (minScore = 0) => {
 // ── Missing exports (stub – endpoints may not exist yet) ──────────────────
 export const fetchGapAnalysis      = async () => (await api.get('/gap-analysis')).data;
 export const fetchOrbAnalysis      = async () => (await api.get('/orb-analysis')).data;
-export const fetchStocksQuotes     = async () => (await api.get('/stocks-quotes')).data;
+export const fetchStocksQuotes     = async () => (await api.get('/stocks/quotes')).data;
 export const fetchScannerUniverse  = async (index = 'ALL') => (await api.get(`/scanner/universe?index=${index}`)).data;
 export const fetchBacktest         = async (symbol: string) => (await api.get(`/backtest/${symbol}`)).data;
+
+// ── Market Data Engine API (/api/engine/*) ─────────────────────────────────
+export const fetchEngineStatus      = async () => (await api.get('/engine/status')).data;
+export const fetchEngineOverview    = async () => (await api.get('/engine/market-overview')).data;
+export const fetchEngineLive        = async (symbol: string) =>
+  (await api.get('/engine/live', { params: { symbol } })).data;
+export const fetchEngineEod         = async (symbol: string) =>
+  (await api.get('/engine/eod', { params: { symbol } })).data;
+export const fetchEnginePrevDay     = async (symbol: string) =>
+  (await api.get('/engine/previous-day', { params: { symbol } })).data;
+export const fetchEngineBatch       = async (symbols: string[]) =>
+  (await apiSlow.post('/engine/batch', symbols)).data;
+export const fetchEngineIndex       = async (ticker: string) =>
+  (await api.get(`/engine/index/${encodeURIComponent(ticker)}`)).data;
+export const triggerEngineEodSnap   = async () =>
+  (await api.post('/engine/eod-snapshot')).data;
+

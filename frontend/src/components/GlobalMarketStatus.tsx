@@ -23,6 +23,7 @@ import {
 import { Refresh, AccessTime, WifiOff, SignalCellularAlt } from '@mui/icons-material';
 import { keyframes } from '@mui/system';
 import { useMarketSession } from '../hooks/useMarketSession';
+import { useMarketEngine } from '../hooks/useLiveMarketData';
 
 // ── Animations ─────────────────────────────────────────────────────────────
 const blink = keyframes`
@@ -80,9 +81,10 @@ export const GlobalMarketStatus: React.FC<GlobalMarketStatusProps> = ({
   variant = 'compact',
 }) => {
   const { status, isOpen, manualRefresh } = useMarketSession();
+  // Engine clock gives us instant 1s updates + correct data mode
+  const engine = useMarketEngine();
 
   const [lastUpdated,    setLastUpdated]    = useState<string>('—');
-  const [countdown,      setCountdown]      = useState<string>('--:--:--');
   const [refreshCounter, setRefreshCounter] = useState<number>(0);
 
   // Update "last updated" when status changes
@@ -94,55 +96,42 @@ export const GlobalMarketStatus: React.FC<GlobalMarketStatusProps> = ({
     );
   }, [status]);
 
-  // Live clock for countdown
-  useEffect(() => {
-    const tick = () => {
-      if (isOpen) {
-        // countdown to close
-        setCountdown(formatCountdown(15, 30));
-      } else {
-        const ist = nowIST();
-        const mins = ist.getHours() * 60 + ist.getMinutes();
-        // pre-open: countdown to 09:15
-        if (ist.getDay() !== 0 && ist.getDay() !== 6 && mins < 9 * 60 + 15) {
-          setCountdown(formatCountdown(9, 15));
-        } else {
-          setCountdown('—');
-        }
-      }
-    };
-    tick();
-    const id = setInterval(tick, 1_000);
-    return () => clearInterval(id);
-  }, [isOpen]);
+  // Use engine countdown (already computed every second)
+  const countdown = engine.countdown || '--:--:--';
 
   // Auto-refresh display counter
   useEffect(() => {
-    setRefreshCounter(status.refreshInterval);
+    setRefreshCounter(engine.refreshMs / 1000);
     const id = setInterval(() => {
-      setRefreshCounter(prev => (prev <= 1 ? status.refreshInterval : prev - 1));
+      setRefreshCounter(prev => (prev <= 1 ? engine.refreshMs / 1000 : prev - 1));
     }, 1_000);
     return () => clearInterval(id);
-  }, [status.refreshInterval, status]);
+  }, [engine.refreshMs, engine.sessionType]);
 
   // ── Derived visuals ────────────────────────────────────────────────────
-  const isLive    = status.status === 'LIVE';
-  const isPreOpen = status.status === 'PRE_OPEN';
-  const isHoliday = status.status === 'HOLIDAY';
-  const isCached  = !isLive && status.dataSource === 'cached';
+  // Use engine session for accuracy (client-side IST detection)
+  const isLive    = engine.sessionType === 'LIVE';
+  const isPreOpen = engine.sessionType === 'PRE_OPEN';
+  const isHoliday = engine.sessionType === 'HOLIDAY';
+  const isCached  = !isLive && engine.dataMode !== 'live';
 
-  const dotColor   = isLive ? '#4caf50' : isCached ? '#ff9800' : '#f44336';
-  const chipColor  = isLive ? 'success'  : isCached ? 'warning'  : 'error';
+  const dotColor   = engine.sessionColor;
+  const chipColor  = isLive ? 'success'  : isPreOpen ? 'warning'  : 'error';
+
+  // Data mode label
+  const dataModeLabel = engine.dataMode === 'eod'
+    ? "Today's EOD"
+    : engine.dataMode === 'prev_close'
+    ? 'Previous Close'
+    : 'Live';
 
   const label = isLive
-    ? '🟢 Live Market'
-    : isCached
-    ? '🟡 Cached Data'
+    ? `🟢 Live Market`
     : isPreOpen
-    ? '⏳ Pre-Open'
+    ? `⏳ Pre-Open · ${dataModeLabel}`
     : isHoliday
-    ? `🏖️ ${status.holidayName ?? 'Holiday'}`
-    : '🔴 Market Closed';
+    ? `🏖️ ${engine.status?.holiday_name ?? 'Holiday'}`
+    : `🔴 Market Closed · ${dataModeLabel}`;
 
   // ── Compact variant (AppBar) ───────────────────────────────────────────
   if (variant === 'compact') {

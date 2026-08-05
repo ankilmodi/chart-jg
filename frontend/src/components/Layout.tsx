@@ -16,6 +16,7 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchMarketOverview, fetchFutureStocks } from '../services/api';
 import { MarketStatusBadge } from './MarketStatusBadge';
 import { GlobalMarketStatus } from './GlobalMarketStatus';
+import { MarketStatusBar } from './MarketStatusBar';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
 import { markAllRead } from '../store';
 import type { StockResult } from '../utils/types';
@@ -294,9 +295,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, themeMode, onToggleThe
           maxWidth: '100%',
           boxSizing: 'border-box',
           overflowX: 'hidden',
-          p: { xs: 1.5, sm: 2, md: 3 },
         }}>
-        {children}
+        {/* Sticky Market Status Bar — auto-switches LIVE/EOD/PRE-OPEN */}
+        <MarketStatusBar />
+        <Box sx={{ p: { xs: 1.5, sm: 2, md: 3 } }}>
+          {children}
+        </Box>
       </Box>
     </Box>
   );

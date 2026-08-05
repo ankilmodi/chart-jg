@@ -10,8 +10,10 @@ import {
   ArrowForward, Equalizer, GridView, Search, Download, Refresh
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
-import { fetchMarketOverview, fetchTopBuy, fetchFutureStocks, exportCSV } from '../services/api';
+import { fetchMarketOverview, fetchTopBuy, fetchFutureStocks, exportCSV, fetchEngineOverview } from '../services/api';
 import { StockTable } from '../components/StockTable';
+import { LiveBadge } from '../components/LiveBadge';
+import { useSessionClock } from '../hooks/useLiveMarketData';
 import type { StockResult } from '../utils/types';
 
 const MetricCard: React.FC<{
@@ -35,11 +37,28 @@ export default function DashboardPage() {
   const [capCategory, setCapCategory] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  const { data: market, isLoading: mktLoading } = useQuery({
+  // Use session clock for smart refresh interval
+  const { refreshMs, isMarketOpen, sessionLabel, dataMode } = useSessionClock();
+
+  // Try engine overview first (has BANK NIFTY + session info); fall back to legacy
+  const { data: engineOverview } = useQuery({
+    queryKey: ['engine-overview'],
+    queryFn: fetchEngineOverview,
+    refetchInterval: refreshMs,
+    staleTime: Math.max(refreshMs - 2_000, 5_000),
+    retry: 2,
+  });
+
+  const { data: legacyMarket, isLoading: mktLoading } = useQuery({
     queryKey: ['market-overview'],
     queryFn: fetchMarketOverview,
-    refetchInterval: 60_000,
+    refetchInterval: refreshMs,
+    staleTime: Math.max(refreshMs - 2_000, 5_000),
+    retry: 2,
   });
+
+  // Prefer engine overview (more accurate) but fall back to legacy
+  const market = engineOverview ?? legacyMarket;
 
   const { data: topBuyData, isLoading: tbLoading } = useQuery({
     queryKey: ['top-buy', 'buy'],
@@ -74,6 +93,15 @@ export default function DashboardPage() {
       <Stack direction="row" spacing={1.5} alignItems="center" mb={3} flexWrap="wrap">
         <Typography variant="h5" fontWeight={800}>🏆 Institutional Stock AI Dashboard</Typography>
         <Chip label="500+ All NSE Shares (Large, Mid, Small Cap)" size="small" color="primary" sx={{ fontWeight: 800 }} />
+        {/* Live session badge */}
+        <LiveBadge variant="chip" />
+        {!isMarketOpen && (
+          <Chip
+            label={dataMode === 'eod' ? "Today's EOD Data" : 'Previous Close'}
+            size="small"
+            sx={{ fontWeight: 700, bgcolor: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', fontSize: 10 }}
+          />
+        )}
         {mktLoading && <CircularProgress size={18} />}
       </Stack>
 

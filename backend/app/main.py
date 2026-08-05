@@ -63,11 +63,24 @@ async def _warmup():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting Nifty Future Analyzer API…")
+    # Start session-aware background scheduler
+    try:
+        from app.scheduler.jobs import start_scheduler
+        start_scheduler()
+        logger.info("Background scheduler started")
+    except Exception as e:
+        logger.warning("Scheduler start failed (non-critical): %s", e)
+
     # Skip background warmup on Vercel – serverless has no persistent event loop
     if not os.getenv("VERCEL"):
         asyncio.create_task(_warmup())
     yield
     logger.info("Shutting down…")
+    try:
+        from app.scheduler.jobs import stop_scheduler
+        stop_scheduler()
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------

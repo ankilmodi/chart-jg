@@ -335,26 +335,6 @@ async def get_stocks_quotes():
                     "ticker":     ticker,
                     "price":      None,
                     "change":     None,
-                    "change_pct": None,
-                    "volume":     None,
-                    "signal":     "N/A",
-                })
-
-        result = {
-            "quotes": quotes,
-            "total": len(quotes),
-            "timestamp": _now(),
-        }
-        _set_cache(cache_key, result)
-        return result
-
-    except Exception as e:
-        logger.error("Stocks quotes error: %s", e)
-        raise HTTPException(status_code=503, detail=f"Failed to fetch stock quotes: {str(e)}")
-
-
-# ---------------------------------------------------------------------------
-# Legacy Compatibility Routes
 # ---------------------------------------------------------------------------
 
 @router.get("/indices", tags=["legacy"])
@@ -530,28 +510,44 @@ async def get_market_overview():
 
     session_status = market_session.get_market_status()
 
-    try:
-        nifty_snap = fetch_live_index("^NSEI")
-        vix_snap   = fetch_live_index("^INDIAVIX")
+    # Determine effective data_source based on market session
+    effective_data_source = "live" if session_status.is_open else "eod"
 
-        nifty_price      = nifty_snap["price"] if nifty_snap else 24614.9
-        nifty_prev       = nifty_snap["prev_close"] if nifty_snap else nifty_price
+    try:
+        nifty_snap   = fetch_live_index("^NSEI")
+        bnifty_snap  = fetch_live_index("^NSEBANK")
+        vix_snap     = fetch_live_index("^INDIAVIX")
+
+        nifty_price      = nifty_snap["price"]      if nifty_snap  else 24614.9
+        nifty_prev       = nifty_snap["prev_close"] if nifty_snap  else nifty_price
         nifty_change     = round(nifty_price - nifty_prev, 2)
-        nifty_change_pct = nifty_snap["change_pct"] if nifty_snap else round((nifty_change / nifty_prev * 100) if nifty_prev else 0, 2)
+        nifty_change_pct = nifty_snap["change_pct"] if nifty_snap  else round((nifty_change / nifty_prev * 100) if nifty_prev else 0, 2)
+
+        bnifty_price      = bnifty_snap["price"]      if bnifty_snap else None
+        bnifty_prev       = bnifty_snap["prev_close"] if bnifty_snap else bnifty_price
+        bnifty_change     = round(bnifty_price - bnifty_prev, 2) if bnifty_price and bnifty_prev else None
+        bnifty_change_pct = bnifty_snap["change_pct"] if bnifty_snap else None
 
         vix_price        = vix_snap["price"] if vix_snap else 12.15
 
         result = {
-            "nifty_price":      round(nifty_price, 2),
-            "nifty_change":     nifty_change,
-            "nifty_change_pct": nifty_change_pct,
-            "vix":              round(vix_price, 2),
-            "vix_safe":         vix_price < 20,
-            "market_trend":     "bullish" if nifty_change_pct >= 0.3 else "bearish" if nifty_change_pct <= -0.3 else "neutral",
-            "data_source":      "live",
-            "market_status":    session_status.status,
-            "is_market_open":   session_status.is_open,
-            "timestamp":        _now(),
+            "nifty_price":          round(nifty_price, 2),
+            "nifty_change":         nifty_change,
+            "nifty_change_pct":     nifty_change_pct,
+            "banknifty_price":      round(bnifty_price, 2) if bnifty_price else None,
+            "banknifty_change":     bnifty_change,
+            "banknifty_change_pct": bnifty_change_pct,
+            "vix":                  round(vix_price, 2),
+            "vix_safe":             vix_price < 20,
+            "market_trend":         "bullish" if nifty_change_pct >= 0.3 else "bearish" if nifty_change_pct <= -0.3 else "neutral",
+            # Accurately reflect whether data is live or EOD
+            "data_source":          effective_data_source,
+            "market_status":        session_status.status,
+            "is_market_open":       session_status.is_open,
+            "session_message":      session_status.message,
+            "next_open":            session_status.next_open,
+            "current_time_ist":     session_status.current_time_ist,
+            "timestamp":            _now(),
         }
 
         _set_cache(cache_key, result)
@@ -560,16 +556,23 @@ async def get_market_overview():
     except Exception as exc:
         logger.warning("market-overview live fetch failed: %s", exc)
         return {
-            "nifty_price":      24614.9,
-            "nifty_change":     -159.4,
-            "nifty_change_pct": -0.64,
-            "vix":              12.15,
-            "vix_safe":         True,
-            "market_trend":     "bearish",
-            "data_source":      "live",
-            "market_status":    session_status.status,
-            "is_market_open":   session_status.is_open,
-            "timestamp":        _now(),
+            "nifty_price":          24614.9,
+            "nifty_change":         -159.4,
+            "nifty_change_pct":     -0.64,
+            "banknifty_price":      52100.0,
+            "banknifty_change":     -312.5,
+            "banknifty_change_pct": -0.60,
+            "vix":                  12.15,
+            "vix_safe":             True,
+            "market_trend":         "bearish",
+            # When live fetch fails, data is definitely not live
+            "data_source":          effective_data_source,
+            "market_status":        session_status.status,
+            "is_market_open":       session_status.is_open,
+            "session_message":      session_status.message,
+            "next_open":            session_status.next_open,
+            "current_time_ist":     session_status.current_time_ist,
+            "timestamp":            _now(),
         }
 
 
@@ -999,3 +1002,168 @@ async def get_stock_detail(symbol: str, trade_type: str = Query("buy")):
     return result.dict()
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Market Data Engine – /api/engine/*
+# Full session-aware LIVE ↔ EOD ↔ PREV-CLOSE auto-switching endpoints
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/engine/status", tags=["engine"])
+async def engine_status():
+    """
+    Full market session status from the MarketDataEngine.
+
+    Returns:
+      - session_type      : LIVE | PRE_OPEN | AFTER_HOURS | HOLIDAY | WEEKEND
+      - is_market_open    : bool
+      - data_mode         : live | eod | prev_close
+      - message           : Human-readable status
+      - client_refresh_sec: Recommended poll interval for clients
+      - next_open         : ISO datetime of next market open
+    """
+    from app.services.market_data_engine import market_data_engine as engine
+    return engine.getMarketStatus().to_dict()
+
+
+@router.get("/engine/live", tags=["engine"])
+async def engine_live_data(symbol: str = Query(..., description="NSE ticker, e.g. RELIANCE.NS")):
+    """
+    Fetch live snapshot for one symbol.
+    During market hours: returns real-time data.
+    After close: returns today's EOD (or last-known) data.
+    """
+    from app.services.market_data_engine import market_data_engine as engine
+    snap = engine.getLiveData(symbol)
+    if not snap:
+        raise HTTPException(status_code=503, detail=f"No data available for {symbol}")
+    status = engine.getMarketStatus()
+    return {
+        **snap.to_dict(),
+        "engine_status": status.session_type,
+        "data_mode":     status.data_mode,
+    }
+
+
+@router.get("/engine/eod", tags=["engine"])
+async def engine_eod_data(symbol: str = Query(..., description="NSE ticker")):
+    """
+    Return today's End-of-Day closing snapshot for a symbol.
+    Falls back to live fetch if EOD not yet stored (before 15:30).
+    """
+    from app.services.market_data_engine import market_data_engine as engine
+    snap = engine.getClosingData(symbol)
+    if not snap:
+        raise HTTPException(status_code=503, detail=f"No EOD data for {symbol}")
+    return {**snap.to_dict(), "data_mode": "eod"}
+
+
+@router.get("/engine/previous-day", tags=["engine"])
+async def engine_previous_day(symbol: str = Query(..., description="NSE ticker")):
+    """Return previous trading day's closing data (cached 1 hour)."""
+    from app.services.market_data_engine import market_data_engine as engine
+    snap = engine.getPreviousDayData(symbol)
+    if not snap:
+        raise HTTPException(status_code=503, detail=f"No previous-day data for {symbol}")
+    return {**snap.to_dict(), "data_mode": "prev_close"}
+
+
+@router.post("/engine/batch", tags=["engine"])
+async def engine_batch_data(symbols: list[str]):
+    """
+    Fetch session-aware snapshots for multiple symbols in one batch.
+    Automatically uses LIVE or EOD based on current session.
+    Body: ["RELIANCE.NS", "TCS.NS", ...]  (max 100)
+    """
+    if not symbols:
+        raise HTTPException(status_code=400, detail="symbols list is empty")
+    if len(symbols) > 100:
+        raise HTTPException(status_code=400, detail="max 100 symbols per batch")
+
+    from app.services.market_data_engine import market_data_engine as engine
+    batch  = engine.getBatchData(symbols)
+    status = engine.getMarketStatus()
+    return {
+        "results":    {k: (v.to_dict() if v else None) for k, v in batch.items()},
+        "total":      len(batch),
+        "data_mode":  status.data_mode,
+        "session":    status.session_type,
+        "is_market_open": status.is_market_open,
+        "timestamp":  _now(),
+    }
+
+
+@router.get("/engine/index/{ticker}", tags=["engine"])
+async def engine_index_data(ticker: str):
+    """
+    Fetch index snapshot: ^NSEI (NIFTY 50), ^NSEBANK (BANK NIFTY), ^INDIAVIX.
+    Automatically LIVE during market hours, EOD otherwise.
+    """
+    from app.services.market_data_engine import market_data_engine as engine
+    snap = engine.getIndexData(ticker)
+    if not snap:
+        raise HTTPException(status_code=503, detail=f"No data for {ticker}")
+    return snap.to_dict()
+
+
+@router.get("/engine/market-overview", tags=["engine"])
+async def engine_market_overview():
+    """
+    Combined overview: NIFTY 50 + BANK NIFTY + VIX + session status.
+    Replaces /api/market-overview with session-aware data_mode.
+    """
+    from app.services.market_data_engine import market_data_engine as engine
+    status  = engine.getMarketStatus()
+    nifty   = engine.getIndexData("^NSEI")
+    bnifty  = engine.getIndexData("^NSEBANK")
+    vix     = engine.getIndexData("^INDIAVIX")
+
+    return {
+        # Index data
+        "nifty_price":          nifty.price       if nifty  else None,
+        "nifty_change":         nifty.change      if nifty  else None,
+        "nifty_change_pct":     nifty.change_pct  if nifty  else None,
+        "banknifty_price":      bnifty.price      if bnifty else None,
+        "banknifty_change":     bnifty.change     if bnifty else None,
+        "banknifty_change_pct": bnifty.change_pct if bnifty else None,
+        "vix":                  vix.price         if vix    else None,
+        "vix_safe":             (vix.price < 20)  if vix    else True,
+        # Session context
+        "data_mode":            status.data_mode,
+        "session_type":         status.session_type,
+        "is_market_open":       status.is_market_open,
+        "market_status":        status.session_type,
+        "message":              status.message,
+        "next_open":            status.next_open,
+        "next_open_readable":   status.next_open_readable,
+        "client_refresh_sec":   status.client_refresh_sec,
+        "current_time_ist":     status.current_time_ist,
+        "last_eod_stored_at":   status.last_eod_stored_at,
+        "market_trend":         (
+            "bullish" if (nifty and nifty.change_pct >= 0.3)
+            else "bearish" if (nifty and nifty.change_pct <= -0.3)
+            else "neutral"
+        ),
+        "timestamp": _now(),
+    }
+
+
+@router.post("/engine/eod-snapshot", tags=["engine"])
+async def engine_trigger_eod_snapshot():
+    """
+    Manually trigger EOD snapshot storage (normally auto-triggered at 15:30 IST).
+    Useful for testing or if automatic trigger failed.
+    """
+    from app.services.market_data_engine import market_data_engine as engine
+    from app.scheduler.jobs import _WARMUP_TICKERS
+    import asyncio
+
+    loop  = asyncio.get_event_loop()
+    count = await loop.run_in_executor(
+        None,
+        lambda: engine.storeEodSnapshot(_WARMUP_TICKERS),
+    )
+    return {
+        "message":   f"EOD snapshot stored for {count} tickers",
+        "count":     count,
+        "stored_at": engine._eod_stored_at,
+        "timestamp": _now(),
+    }
