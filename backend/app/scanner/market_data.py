@@ -52,31 +52,31 @@ def fetch_daily(ticker: str, period: str = "200d") -> Optional[pd.DataFrame]:
     if cached is not None:
         return cached
 
-    # Direct Yahoo chart API for indices (^NSEI, ^NSEBANK, ^INDIAVIX)
-    if ticker.startswith("^"):
-        try:
-            import requests
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-            url = f'https://query2.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range={period}'
-            r = requests.get(url, headers=headers, timeout=8)
-            if r.status_code == 200:
-                res = r.json()['chart']['result'][0]
-                timestamps = res['timestamp']
-                quote = res['indicators']['quote'][0]
+    # Direct Yahoo chart API with custom User-Agent for guaranteed live data
+    try:
+        import requests
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+        url = f'https://query2.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range={period}'
+        r = requests.get(url, headers=headers, timeout=8)
+        if r.status_code == 200:
+            res = r.json()['chart']['result'][0]
+            timestamps = res.get('timestamp')
+            quote = res['indicators']['quote'][0]
+            if timestamps and quote.get('close'):
                 df = pd.DataFrame({
-                    'open': quote['open'],
-                    'high': quote['high'],
-                    'low': quote['low'],
-                    'close': quote['close'],
-                    'volume': quote['volume']
+                    'open': quote.get('open', []),
+                    'high': quote.get('high', []),
+                    'low': quote.get('low', []),
+                    'close': quote.get('close', []),
+                    'volume': quote.get('volume', [])
                 }, index=pd.to_datetime(timestamps, unit='s'))
                 df = df.dropna(subset=['close'])
                 if not df.empty:
                     _set_cache(cache_key, df)
                     _last_known_df[ticker] = df
                     return df
-        except Exception as e:
-            logger.debug("fetch_daily direct chart error for %s: %s", ticker, e)
+    except Exception as e:
+        logger.debug("fetch_daily direct chart error for %s: %s", ticker, e)
 
     try:
         df = yf.download(

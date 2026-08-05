@@ -37,7 +37,7 @@ import logging
 import time
 import threading
 from dataclasses import dataclass, field, asdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -392,78 +392,23 @@ class MarketDataEngine:
         if not missing:
             return result
 
-        try:
-            import yfinance as yf
-            import pandas as pd
+        from concurrent.futures import ThreadPoolExecutor
 
-            df = yf.download(
-                missing,
-                period   = period,
-                interval = "1d",
-                auto_adjust = True,
-                progress    = False,
-                multi_level_index = True,
-            )
-            is_multi = isinstance(df.columns, pd.MultiIndex)
-            now_str  = self._utc_str()
+        def fetch_worker(t: str):
+            snap = self._fetch_one(t, st, period=period)
+            if snap:
+                key = f"live_{t}"
+                self._cache.set(key, snap)
+            return t, snap
 
-            for ticker in missing:
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(fetch_worker, t) for t in missing]
+            for future in futures:
                 try:
-                    if is_multi:
-                        close_s  = df[("Close",  ticker)].dropna()
-                        vol_s    = df[("Volume", ticker)].dropna()
-                        open_s   = df[("Open",   ticker)].dropna()
-                        high_s   = df[("High",   ticker)].dropna()
-                        low_s    = df[("Low",    ticker)].dropna()
-                    else:
-                        close_s  = df["Close"].dropna()
-                        vol_s    = df["Volume"].dropna()
-                        open_s   = df["Open"].dropna()
-                        high_s   = df["High"].dropna()
-                        low_s    = df["Low"].dropna()
-
-                    if len(close_s) < 1:
-                        raise ValueError("empty")
-
-                    ltp      = float(close_s.iloc[-1])
-                    prev     = float(close_s.iloc[-2]) if len(close_s) >= 2 else ltp
-                    chg      = round(ltp - prev, 2)
-                    chg_pct  = round((chg / prev * 100) if prev else 0.0, 2)
-                    vol_val  = int(vol_s.iloc[-1]) if len(vol_s) >= 1 else 0
-                    avg_vol  = int(vol_s.mean())    if len(vol_s) >= 1 else 0
-                    spread   = max(0.05, round(ltp * 0.0004, 2))
-
-                    snap = StockSnapshot(
-                        symbol      = ticker,
-                        ltp         = round(ltp,  2),
-                        open        = round(float(open_s.iloc[-1]),  2) if len(open_s)  >= 1 else ltp,
-                        high        = round(float(high_s.iloc[-1]),  2) if len(high_s)  >= 1 else ltp,
-                        low         = round(float(low_s.iloc[-1]),   2) if len(low_s)   >= 1 else ltp,
-                        close       = round(ltp,  2),
-                        prev_close  = round(prev, 2),
-                        change      = chg,
-                        change_pct  = chg_pct,
-                        volume      = vol_val,
-                        avg_volume  = avg_vol,
-                        vwap        = round(ltp * 0.9998, 2),   # approximate
-                        bid         = round(ltp - spread / 2, 2),
-                        ask         = round(ltp + spread / 2, 2),
-                        data_source = "live" if st == SessionType.LIVE else "eod",
-                        session_type= st.value,
-                        as_of       = str(close_s.index[-1]),
-                        fetched_at  = now_str,
-                    )
-                    key = f"live_{ticker}"
-                    self._cache.set(key, snap)
-                    result[ticker] = snap
+                    t, snap = future.result()
+                    result[t] = snap if snap else self._cache.get_last_known(f"live_{t}")
                 except Exception as exc:
-                    logger.debug("batch_data(%s): %s", ticker, exc)
-                    result[ticker] = self._cache.get_last_known(f"live_{ticker}")
-
-        except Exception as exc:
-            logger.warning("getBatchData download failed: %s", exc)
-            for t in missing:
-                result[t] = self._cache.get_last_known(f"live_{t}")
+                    logger.debug("getBatchData worker error: %s", exc)
 
         return result
 
@@ -548,60 +493,59 @@ class MarketDataEngine:
     # ── Internal fetch ──────────────────────────────────────────────────────
 
     def _fetch_one(
-        self, ticker: str, st: SessionType, period: str = "2d"
+        self, ticker: str, st: SessionType, period: str = "5d"
     ) -> Optional[StockSnapshot]:
-        """Core yfinance fetch for a single ticker with retry."""
+        """Core live fetch for a single ticker using direct Yahoo Chart API with retry."""
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
         for attempt in range(3):
             try:
-                import yfinance as yf
-                df = yf.download(
-                    ticker,
-                    period      = period,
-                    interval    = "1d",
-                    auto_adjust = True,
-                    progress    = False,
-                    multi_level_index = False,
-                )
-                if df is None or df.empty:
-                    continue
-                df.columns = [c.lower() for c in df.columns]
-                close_s = df["close"].dropna()
-                if len(close_s) < 1:
-                    continue
+                import requests
+                url = f'https://query2.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range={period}'
+                r = requests.get(url, headers=headers, timeout=6)
+                if r.status_code == 200:
+                    res = r.json()['chart']['result'][0]
+                    timestamps = res.get('timestamp')
+                    quote = res['indicators']['quote'][0]
+                    closes = [c for c in quote.get('close', []) if c is not None]
+                    opens  = [o for o in quote.get('open', [])  if o is not None]
+                    highs  = [h for h in quote.get('high', [])  if h is not None]
+                    lows   = [l for l in quote.get('low', [])   if l is not None]
+                    vols   = [v for v in quote.get('volume', []) if v is not None]
 
-                ltp      = float(close_s.iloc[-1])
-                prev     = float(close_s.iloc[-2]) if len(close_s) >= 2 else ltp
-                chg      = round(ltp - prev, 2)
-                chg_pct  = round((chg / prev * 100) if prev else 0.0, 2)
-                vol_s    = df.get("volume", df.get("Volume"))
-                vol_val  = int(vol_s.iloc[-1]) if vol_s is not None and len(vol_s) >= 1 else 0
-                avg_vol  = int(vol_s.mean())    if vol_s is not None and len(vol_s) >= 1 else 0
-                spread   = max(0.05, round(ltp * 0.0004, 2))
+                    if closes:
+                        ltp      = float(closes[-1])
+                        prev     = float(closes[-2]) if len(closes) >= 2 else ltp
+                        chg      = round(ltp - prev, 2)
+                        chg_pct  = round((chg / prev * 100) if prev else 0.0, 2)
+                        vol_val  = int(vols[-1]) if vols else 0
+                        avg_vol  = int(sum(vols) / len(vols)) if vols else 0
+                        spread   = max(0.05, round(ltp * 0.0004, 2))
+                        as_of_str= datetime.fromtimestamp(timestamps[-1], tz=timezone.utc).strftime("%Y-%m-%d") if timestamps else self._utc_str()
 
-                return StockSnapshot(
-                    symbol      = ticker,
-                    ltp         = round(ltp, 2),
-                    open        = round(float(df["open"].iloc[-1]),  2) if "open"  in df.columns else ltp,
-                    high        = round(float(df["high"].iloc[-1]),  2) if "high"  in df.columns else ltp,
-                    low         = round(float(df["low"].iloc[-1]),   2) if "low"   in df.columns else ltp,
-                    close       = round(ltp, 2),
-                    prev_close  = round(prev, 2),
-                    change      = chg,
-                    change_pct  = chg_pct,
-                    volume      = vol_val,
-                    avg_volume  = avg_vol,
-                    vwap        = round(ltp * 0.9998, 2),
-                    bid         = round(ltp - spread / 2, 2),
-                    ask         = round(ltp + spread / 2, 2),
-                    data_source = "live" if st == SessionType.LIVE else "eod",
-                    session_type= st.value,
-                    as_of       = str(close_s.index[-1]),
-                    fetched_at  = self._utc_str(),
-                )
+                        return StockSnapshot(
+                            symbol      = ticker,
+                            ltp         = round(ltp, 2),
+                            open        = round(float(opens[-1]),  2) if opens else ltp,
+                            high        = round(float(highs[-1]),  2) if highs else ltp,
+                            low         = round(float(lows[-1]),   2) if lows  else ltp,
+                            close       = round(ltp, 2),
+                            prev_close  = round(prev, 2),
+                            change      = chg,
+                            change_pct  = chg_pct,
+                            volume      = vol_val,
+                            avg_volume  = avg_vol,
+                            vwap        = round(ltp * 0.9998, 2),
+                            bid         = round(ltp - spread / 2, 2),
+                            ask         = round(ltp + spread / 2, 2),
+                            data_source = "live" if st == SessionType.LIVE else "eod",
+                            session_type= st.value,
+                            as_of       = as_of_str,
+                            fetched_at  = self._utc_str(),
+                        )
             except Exception as exc:
-                logger.debug("_fetch_one(%s) attempt %d: %s", ticker, attempt + 1, exc)
+                logger.debug("_fetch_one direct chart(%s) attempt %d: %s", ticker, attempt + 1, exc)
                 if attempt < 2:
-                    time.sleep(0.5 * (attempt + 1))  # backoff: 0.5s, 1.0s
+                    time.sleep(0.5 * (attempt + 1))
         return None
 
 
