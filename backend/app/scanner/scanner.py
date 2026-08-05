@@ -329,8 +329,19 @@ def _build_fast_fallback(trade_type: str = "buy", limit: int = 209) -> List[Scan
     pool = pool[:limit]
 
     results = []
+    from app.scanner.market_data import fetch_daily
     for stock_info in pool:
         try:
+            ticker = getattr(stock_info, 'ticker', None) or f"{stock_info.symbol}.NS"
+            df = fetch_daily(ticker)
+            if df is not None and not df.empty:
+                ind = compute_all(df)
+                res = _build_result(stock_info, df, ind, {}, True, 0.8, trade_type=trade_type)
+                if res:
+                    results.append(res)
+                continue
+
+            # Fallback only if Yahoo API fails for ticker
             seed_val = sum(ord(c) for c in stock_info.symbol)
             np.random.seed(seed_val)
             if stock_info.symbol in ["MRF"]:
