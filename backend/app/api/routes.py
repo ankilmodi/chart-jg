@@ -815,21 +815,37 @@ def _build_screener_results(limit: int = 50, cap_category: Optional[str] = None,
     results = []
     for stock_info in pool:
         try:
-            seed_val = sum(ord(c) for c in stock_info.symbol)
-            np.random.seed(seed_val)
-            if stock_info.symbol in ["MRF"]:
-                base_p = 125000.0
-            elif stock_info.symbol in ["PAGEIND", "BOSCHLTD"]:
-                base_p = 35000.0
-            elif stock_info.symbol in ["RELIANCE", "TCS", "BAJFINANCE", "INFY", "HDFCBANK"]:
-                base_p = 2500.0
-            else:
-                base_p = float((seed_val % 4500) + 120)
+            base_p = None
+            try:
+                import requests
+                h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                r_meta = requests.get(f'https://query1.finance.yahoo.com/v8/finance/chart/{stock_info.ticker or f"{stock_info.symbol}.NS"}?interval=1d&range=5d', headers=h, timeout=3)
+                if r_meta.status_code == 200:
+                    meta = r_meta.json()['chart']['result'][0]['meta']
+                    base_p = float(meta.get('regularMarketPrice') or meta.get('chartPreviousClose') or 0)
+            except Exception:
+                pass
+
+            if not base_p or base_p <= 0:
+                REAL_BASE_PRICES = {
+                    "NTPC": 349.90, "RELIANCE": 1280.0, "TCS": 3450.0, "INFY": 1780.0, "HDFCBANK": 1620.0,
+                    "ICICIBANK": 1220.0, "SBIN": 840.0, "BHARTIARTL": 1450.0, "LT": 3600.0, "TATAMOTORS": 1020.0,
+                    "M&M": 2900.0, "ONGC": 320.0, "POWERGRID": 340.0, "COALINDIA": 510.0, "BPCL": 340.0,
+                    "IOC": 175.0, "MARUTI": 12400.0, "SUNPHARMA": 1720.0, "TITAN": 3400.0, "WIPRO": 490.0,
+                    "TATASTEEL": 160.0, "JSWSTEEL": 930.0, "ADANIPORTS": 1350.0, "CIPLA": 1520.0, "DRREDDY": 6800.0,
+                    "EICHERMOT": 4800.0, "HEROMOTOCO": 5200.0, "DIVISLAB": 4500.0, "APOLLOHOSP": 6600.0,
+                    "HINDUNILVR": 2700.0, "ITC": 490.0, "KOTAKBANK": 1800.0, "AXISBANK": 1180.0, "ASIANPAINT": 2900.0,
+                    "HCLTECH": 1580.0, "ULTRACEMCO": 11200.0, "BAJAJFINSV": 1620.0, "NESTLEIND": 2500.0,
+                    "GRASIM": 2600.0, "TATACONSUM": 1200.0, "BAJAJ-AUTO": 9800.0, "HINDALCO": 640.0,
+                    "INDUSINDBK": 1400.0, "SBILIFE": 1720.0, "HDFCLIFE": 710.0, "MRF": 125000.0, "PAGEIND": 35000.0, "BOSCHLTD": 35000.0,
+                }
+                base_p = REAL_BASE_PRICES.get(stock_info.symbol, 350.0)
 
             dates = pd.date_range(end=datetime.now(), periods=100)
             volatility = base_p * 0.012
             close_prices = base_p + np.cumsum(np.random.randn(100) * volatility)
             close_prices = np.clip(close_prices, 10.0, 300000.0)
+            close_prices[-1] = base_p
             df = pd.DataFrame({
                 "open": close_prices * 0.998,
                 "high": close_prices * 1.015,
