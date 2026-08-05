@@ -943,17 +943,7 @@ async def get_stock_detail(symbol: str, trade_type: str = Query("buy")):
     """
     clean_sym = symbol.upper().replace(".NS", "")
 
-    # 1. Try finding in scan cache first
-    try:
-        from app.scanner.scanner import _scan_cache
-        if _scan_cache:
-            match = next((r for r in _scan_cache if r.symbol.upper().replace(".NS", "") == clean_sym), None)
-            if match:
-                return match.dict()
-    except Exception:
-        pass
-
-    # 2. Fetch real live OHLCV data from Yahoo Finance
+    # 1. Fetch real live OHLCV data from Yahoo Finance directly for accurate real-time quote
     from app.scanner.universe import get_full_universe
     from app.scanner.schemas import StockInfo
     from app.scanner.market_data import fetch_daily
