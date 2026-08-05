@@ -53,31 +53,38 @@ def fetch_daily(ticker: str, period: str = "200d", force: bool = False) -> Optio
         if cached is not None:
             return cached
 
-    # Direct Yahoo chart API with custom User-Agent for guaranteed live data
-    try:
-        import requests
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
-        url = f'https://query2.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range={period}'
-        r = requests.get(url, headers=headers, timeout=8)
-        if r.status_code == 200:
-            res = r.json()['chart']['result'][0]
-            timestamps = res.get('timestamp')
-            quote = res['indicators']['quote'][0]
-            if timestamps and quote.get('close'):
-                df = pd.DataFrame({
-                    'open': quote.get('open', []),
-                    'high': quote.get('high', []),
-                    'low': quote.get('low', []),
-                    'close': quote.get('close', []),
-                    'volume': quote.get('volume', [])
-                }, index=pd.to_datetime(timestamps, unit='s'))
-                df = df.dropna(subset=['close'])
-                if not df.empty:
-                    _set_cache(cache_key, df)
-                    _last_known_df[ticker] = df
-                    return df
-    except Exception as e:
-        logger.debug("fetch_daily direct chart error for %s: %s", ticker, e)
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Referer': 'https://finance.yahoo.com'
+    }
+
+    for domain in ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']:
+        for prd in [period, '30d', '5d']:
+            try:
+                import requests
+                url = f'https://{domain}/v8/finance/chart/{ticker}?interval=1d&range={prd}'
+                r = requests.get(url, headers=headers, timeout=6)
+                if r.status_code == 200:
+                    res = r.json()['chart']['result'][0]
+                    timestamps = res.get('timestamp')
+                    quote = res['indicators']['quote'][0]
+                    if timestamps and quote.get('close'):
+                        df = pd.DataFrame({
+                            'open': quote.get('open', []),
+                            'high': quote.get('high', []),
+                            'low': quote.get('low', []),
+                            'close': quote.get('close', []),
+                            'volume': quote.get('volume', [])
+                        }, index=pd.to_datetime(timestamps, unit='s'))
+                        df = df.dropna(subset=['close'])
+                        if not df.empty:
+                            _set_cache(cache_key, df)
+                            _last_known_df[ticker] = df
+                            return df
+            except Exception as e:
+                logger.debug("fetch_daily error for %s on %s (%s): %s", ticker, domain, prd, e)
 
     try:
         df = yf.download(
@@ -96,7 +103,7 @@ def fetch_daily(ticker: str, period: str = "200d", force: bool = False) -> Optio
                 _last_known_df[ticker] = df
                 return df
     except Exception as e:
-        logger.debug("fetch_daily(%s) error: %s", ticker, e)
+        logger.debug("fetch_daily(%s) yfinance error: %s", ticker, e)
 
     if ticker in _last_known_df:
         return _last_known_df[ticker]
