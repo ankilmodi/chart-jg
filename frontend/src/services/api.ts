@@ -14,14 +14,24 @@ const BASE_URL = import.meta.env.VITE_API_URL ||
 export const api = axios.create({
   baseURL: BASE_URL,
   timeout: 30000,
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+  },
 });
 
 // Separate instance for slow scanner endpoints (full scan can take 30–60s first time)
 export const apiSlow = axios.create({
   baseURL: BASE_URL,
   timeout: 90000,
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+  },
 });
 
 api.interceptors.response.use(
@@ -148,7 +158,7 @@ export const fetchOiAnalysis     = async (limit = 30, params?: ScreenerParams): 
   (await apiSlow.get(`/oi-analysis${buildQuery({ limit, ...params })}`)).data;
 
 export const fetchStockDetail    = async (symbol: string, tradeType = 'buy') =>
-  (await apiSlow.get(`/stock/${symbol}?trade_type=${tradeType}`)).data;
+  (await apiSlow.get(`/stock/${symbol}?trade_type=${tradeType}&_t=${Date.now()}`)).data;
 
 export const fetchScanner        = async (minScore = 60, force = false): Promise<StocksResponse> =>
   (await apiSlow.get(`/scanner?min_score=${minScore}&force=${force}`)).data;

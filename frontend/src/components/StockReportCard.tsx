@@ -3,9 +3,10 @@ import {
   Box, Card, Typography, Grid, Chip, Divider, Paper, Table, TableBody, TableCell, TableRow
 } from '@mui/material';
 import {
-  CheckCircle, Cancel, TrendingUp, TrendingDown, Security, Equalizer, Speed, Layers, Star, Analytics, Verified
+  CheckCircle, Cancel, TrendingUp, TrendingDown, Security, Equalizer, Speed, Layers, Star, Analytics, Verified, Schedule
 } from '@mui/icons-material';
 import type { StockResult } from '../utils/types';
+import { useSessionClock } from '../hooks/useLiveMarketData';
 
 interface StockReportCardProps {
   stock: StockResult;
@@ -13,13 +14,16 @@ interface StockReportCardProps {
 }
 
 export const StockReportCard: React.FC<StockReportCardProps> = ({ stock }) => {
+  const clock = useSessionClock();
   const isBuy = stock.trade_type !== 'sell' && stock.signal !== 'SELL' && stock.signal !== 'STRONG SELL';
   const totalScore = Math.min(200, stock.institutional_score || (stock.buy_score ? stock.buy_score * 2 : 185));
   const grade = stock.institutional_grade || (totalScore >= 180 ? 'A+' : totalScore >= 160 ? 'A' : 'B');
   const isPositive = isBuy;
-  const price = stock.current_price || 2945.6;
+  const price = stock.current_price || 0;
 
   const bgBorderColor = isPositive ? '#10B981' : '#EF4444';
+
+  const formattedDateStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
   return (
     <Box sx={{ width: '100%', mb: 4 }}>
@@ -47,6 +51,12 @@ export const StockReportCard: React.FC<StockReportCardProps> = ({ stock }) => {
                 </Typography>
                 <Chip label="F&O Eligible ✅" color="success" size="small" sx={{ fontWeight: 800 }} />
                 <Chip label={`NSE: ${stock.symbol}`} color="primary" size="small" sx={{ fontWeight: 800 }} />
+                <Chip
+                  icon={<Schedule sx={{ fontSize: 13 }} />}
+                  label={`${clock.isMarketOpen ? 'Market Open 🟢' : 'Market Closed 🔴'} (${clock.dataModeLabel})`}
+                  size="small"
+                  sx={{ fontWeight: 800, bgcolor: `${clock.sessionColor}22`, color: clock.sessionColor, border: `1px solid ${clock.sessionColor}` }}
+                />
               </Box>
 
               <Grid container spacing={1} sx={{ mt: 0.5 }}>
@@ -85,7 +95,10 @@ export const StockReportCard: React.FC<StockReportCardProps> = ({ stock }) => {
                 ₹{price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </Typography>
               <Typography variant="subtitle1" fontWeight={800} color={stock.change_pct >= 0 ? 'success.main' : 'error.main'}>
-                {stock.change_pct >= 0 ? '+' : ''}{(stock.change_pct || 1.85).toFixed(2)}% TODAY
+                {stock.change_pct >= 0 ? '+' : ''}{(stock.change_pct || 0).toFixed(2)}% TODAY
+              </Typography>
+              <Typography variant="caption" color="text.secondary" fontWeight={700} display="block" mt={0.5}>
+                Last Updated: {formattedDateStr}, {clock.istTime} IST
               </Typography>
             </Grid>
           </Grid>

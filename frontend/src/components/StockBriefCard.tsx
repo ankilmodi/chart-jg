@@ -146,7 +146,7 @@ export const StockBriefCard: React.FC<StockBriefCardProps> = ({
                   </Stack>
 
                   <Typography variant="caption" color="#94A3B8" fontSize={11} display="block" mt={0.2}>
-                    {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} {clock.istTime} IST • <span style={{ color: clock.sessionColor, fontWeight: 700 }}>{clock.isMarketOpen ? 'Market Open' : 'Market Closed'}</span> ({clock.dataModeLabel})
+                    Last Updated: {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}, {clock.istTime} IST • <span style={{ color: clock.sessionColor, fontWeight: 700 }}>{clock.isMarketOpen ? 'Market Open 🟢' : 'Market Closed 🔴'}</span> ({clock.dataModeLabel})
                   </Typography>
                 </Box>
               </Stack>
