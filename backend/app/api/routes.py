@@ -966,7 +966,7 @@ async def get_stock_detail(symbol: str, trade_type: str = Query("buy")):
         )
 
     ticker = stock_info.ticker or f"{clean_sym}.NS"
-    df = fetch_daily(ticker)
+    df = fetch_daily(ticker, force=True)
 
     trade_str = trade_type if isinstance(trade_type, str) else getattr(trade_type, "default", "buy")
 

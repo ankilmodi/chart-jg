@@ -45,12 +45,13 @@ _last_known_df: Dict[str, pd.DataFrame] = {}
 
 # ── Single stock daily OHLCV ───────────────────────────────────────────────
 
-def fetch_daily(ticker: str, period: str = "200d") -> Optional[pd.DataFrame]:
+def fetch_daily(ticker: str, period: str = "200d", force: bool = False) -> Optional[pd.DataFrame]:
     """Fetch daily OHLCV for a single ticker. Returns lowercase-column DataFrame."""
     cache_key = f"daily_{ticker}_{period}"
-    cached = _cached(cache_key)
-    if cached is not None:
-        return cached
+    if not force:
+        cached = _cached(cache_key)
+        if cached is not None:
+            return cached
 
     # Direct Yahoo chart API with custom User-Agent for guaranteed live data
     try:

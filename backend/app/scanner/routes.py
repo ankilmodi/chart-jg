@@ -590,7 +590,7 @@ async def get_stock_detail(symbol: str, trade_type: str = Query("buy")):
         stock_info = StockInfo(symbol=clean_sym, name=clean_sym, sector="Diversified", index="F&O", ticker=f"{clean_sym}.NS")
 
     ticker = stock_info.ticker or f"{clean_sym}.NS"
-    df_real = fetch_daily(ticker)
+    df_real = fetch_daily(ticker, force=True)
     trade_str = trade_type if isinstance(trade_type, str) else getattr(trade_type, "default", "buy")
 
     if df_real is not None and not df_real.empty:
