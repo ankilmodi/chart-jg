@@ -581,10 +581,10 @@ async def get_stock_detail(symbol: str, trade_type: str = Query("buy")):
     match = next((r for r in results if r.symbol.upper().replace(".NS", "") == clean_sym), None)
 
     if not match:
-        # Fallback: construct dynamic ScanResult for requested symbol so no stock ever 404s
         from app.scanner.universe import get_full_universe
         from app.scanner.scanner import _build_result
         from app.scanner.indicators import compute_all as calculate_indicators
+        from app.scanner.market_data import fetch_daily
 
         from app.scanner.schemas import StockInfo
         import pandas as pd
@@ -594,21 +594,29 @@ async def get_stock_detail(symbol: str, trade_type: str = Query("buy")):
         if not stock_info:
             stock_info = StockInfo(symbol=clean_sym, name=clean_sym, sector="Diversified", index="F&O", ticker=f"{clean_sym}.NS")
 
-        seed_val = sum(ord(c) for c in clean_sym)
-        np.random.seed(seed_val)
-        base_p = 125000.0 if clean_sym == "MRF" else 2500.0
-        dates = pd.date_range(end=datetime.now(), periods=100)
-        close_prices = base_p + np.cumsum(np.random.randn(100) * (base_p * 0.005))
-        df_mock = pd.DataFrame({
-            "open": close_prices * 0.998,
-            "high": close_prices * 1.012,
-            "low": close_prices * 0.988,
-            "close": close_prices,
-            "volume": np.random.randint(20000, 150000, size=100)
-        }, index=dates)
+        ticker = stock_info.ticker or f"{clean_sym}.NS"
+        df_real = fetch_daily(ticker)
+        trade_str = trade_type if isinstance(trade_type, str) else getattr(trade_type, "default", "buy")
 
-        ind = calculate_indicators(df_mock)
-        match = _build_result(stock_info, df_mock, ind, {}, True, 0.8, trade_type=trade_type)
+        if df_real is not None and not df_real.empty:
+            ind = calculate_indicators(df_real)
+            match = _build_result(stock_info, df_real, ind, {}, True, 0.8, trade_type=trade_str)
+        else:
+            seed_val = sum(ord(c) for c in clean_sym)
+            np.random.seed(seed_val)
+            base_p = 125000.0 if clean_sym == "MRF" else 2500.0
+            dates = pd.date_range(end=datetime.now(), periods=100)
+            close_prices = base_p + np.cumsum(np.random.randn(100) * (base_p * 0.005))
+            df_mock = pd.DataFrame({
+                "open": close_prices * 0.998,
+                "high": close_prices * 1.012,
+                "low": close_prices * 0.988,
+                "close": close_prices,
+                "volume": np.random.randint(20000, 150000, size=100)
+            }, index=dates)
+
+            ind = calculate_indicators(df_mock)
+            match = _build_result(stock_info, df_mock, ind, {}, True, 0.8, trade_type=trade_type)
 
     if not match:
         raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")

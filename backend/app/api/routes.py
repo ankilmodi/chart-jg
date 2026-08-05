@@ -335,7 +335,17 @@ async def get_stocks_quotes():
                     "ticker":     ticker,
                     "price":      None,
                     "change":     None,
-# ---------------------------------------------------------------------------
+                    "change_pct": None,
+                    "volume":     0,
+                    "signal":     "NEUTRAL",
+                })
+
+        result_data = {"quotes": quotes}
+        _set_cache(cache_key, result_data)
+        return result_data
+    except Exception as e:
+        logger.error(f"Error fetching stock quotes: {e}")
+        return {"quotes": []}
 
 @router.get("/indices", tags=["legacy"])
 async def legacy_indices():
@@ -943,9 +953,12 @@ async def get_stock_detail(symbol: str, trade_type: str = Query("buy")):
     except Exception:
         pass
 
-    # 2. Lookup metadata from 4,349 universe catalog
+    # 2. Fetch real live OHLCV data from Yahoo Finance
     from app.scanner.universe import get_full_universe
-    from app.scanner.schemas import StockInfo, ScanResult
+    from app.scanner.schemas import StockInfo
+    from app.scanner.market_data import fetch_daily
+    from app.scanner.indicators import compute_all as calculate_indicators
+    from app.scanner.scanner import _build_result
     import numpy as np
     import pandas as pd
 
@@ -962,11 +975,20 @@ async def get_stock_detail(symbol: str, trade_type: str = Query("buy")):
             fo_eligible=False,
         )
 
-    # Deterministic calculation based on symbol hash
+    ticker = stock_info.ticker or f"{clean_sym}.NS"
+    df = fetch_daily(ticker)
+
+    trade_str = trade_type if isinstance(trade_type, str) else getattr(trade_type, "default", "buy")
+
+    if df is not None and not df.empty:
+        ind = calculate_indicators(df)
+        result = _build_result(stock_info, df, ind, {}, True, 0.8, trade_type=trade_str)
+        return result.dict()
+
+    # 3. Fallback: simulated OHLCV only if Yahoo API fails
     seed_val = sum(ord(c) for c in clean_sym)
     np.random.seed(seed_val)
 
-    # Seed base price realistically
     if clean_sym in ["MRF"]:
         base_p = 125000.0
     elif clean_sym in ["PAGEIND", "BOSCHLTD", "HONAUT"]:
@@ -976,15 +998,10 @@ async def get_stock_detail(symbol: str, trade_type: str = Query("buy")):
     else:
         base_p = float((seed_val % 4500) + 120)
 
-    # Build simulated OHLCV for technical indicators calculation
     dates = pd.date_range(end=datetime.now(), periods=100)
     volatility = base_p * 0.012
     close_prices = base_p + np.cumsum(np.random.randn(100) * volatility)
     close_prices = np.clip(close_prices, 10.0, 300000.0)
-    last_p = round(float(close_prices[-1]), 2)
-    prev_p = round(float(close_prices[-2]), 2)
-    chg = round(last_p - prev_p, 2)
-    chg_pct = round((chg / prev_p) * 100, 2)
 
     df = pd.DataFrame({
         "open": close_prices * 0.998,
@@ -993,9 +1010,6 @@ async def get_stock_detail(symbol: str, trade_type: str = Query("buy")):
         "close": close_prices,
         "volume": np.random.randint(50000, 500000, size=100)
     }, index=dates)
-
-    from app.scanner.indicators import compute_all as calculate_indicators
-    from app.scanner.scanner import _build_result
 
     ind = calculate_indicators(df)
     result = _build_result(stock_info, df, ind, {}, True, 0.8, trade_type=trade_type)
