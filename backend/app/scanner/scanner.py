@@ -372,6 +372,7 @@ def _build_fast_fallback(trade_type: str = "buy", limit: int = 209) -> List[Scan
             volatility = base_p * 0.012
             close_prices = base_p + np.cumsum(np.random.randn(100) * volatility)
             close_prices = np.clip(close_prices, 10.0, 300000.0)
+            close_prices[-1] = base_p
             df = pd.DataFrame({
                 "open": close_prices * 0.998,
                 "high": close_prices * 1.015,

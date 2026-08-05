@@ -624,6 +624,7 @@ async def get_stock_detail(symbol: str, trade_type: str = Query("buy")):
         base_p = REAL_BASE_PRICES.get(clean_sym, 350.0)
     dates = pd.date_range(end=datetime.now(), periods=100)
     close_prices = base_p + np.cumsum(np.random.randn(100) * (base_p * 0.005))
+    close_prices[-1] = base_p
     df_mock = pd.DataFrame({
         "open": close_prices * 0.998,
         "high": close_prices * 1.012,

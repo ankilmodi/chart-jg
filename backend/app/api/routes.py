@@ -1006,6 +1006,7 @@ async def get_stock_detail(symbol: str, trade_type: str = Query("buy")):
     volatility = base_p * 0.012
     close_prices = base_p + np.cumsum(np.random.randn(100) * volatility)
     close_prices = np.clip(close_prices, 10.0, 300000.0)
+    close_prices[-1] = base_p
 
     df = pd.DataFrame({
         "open": close_prices * 0.998,
