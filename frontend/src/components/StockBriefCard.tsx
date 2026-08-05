@@ -9,6 +9,7 @@ import {
 
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import type { StockResult } from '../utils/types';
+import { useSessionClock } from '../hooks/useLiveMarketData';
 
 interface StockBriefCardProps {
   stock: StockResult;
@@ -23,6 +24,7 @@ export const StockBriefCard: React.FC<StockBriefCardProps> = ({
   onToggleWatchlist,
   isWatchlisted = false,
 }) => {
+  const clock = useSessionClock();
   const [timeframe, setTimeframe] = useState<'1D' | '1W' | '1M' | '3M' | '1Y' | '5Y'>('1D');
   const [calcOpen, setCalcOpen] = useState(false);
   const [fundModalOpen, setFundModalOpen] = useState(false);
@@ -144,7 +146,7 @@ export const StockBriefCard: React.FC<StockBriefCardProps> = ({
                   </Stack>
 
                   <Typography variant="caption" color="#94A3B8" fontSize={11} display="block" mt={0.2}>
-                    19 Jul 2026 02:45 PM IST • <span style={{ color: '#10B981', fontWeight: 700 }}>Market Open</span>
+                    {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} {clock.istTime} IST • <span style={{ color: clock.sessionColor, fontWeight: 700 }}>{clock.isMarketOpen ? 'Market Open' : 'Market Closed'}</span> ({clock.dataModeLabel})
                   </Typography>
                 </Box>
               </Stack>
