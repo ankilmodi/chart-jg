@@ -341,17 +341,29 @@ def _build_fast_fallback(trade_type: str = "buy", limit: int = 209) -> List[Scan
                     results.append(res)
                 continue
 
-            # Fallback only if Yahoo API fails for ticker
-            seed_val = sum(ord(c) for c in stock_info.symbol)
-            np.random.seed(seed_val)
-            if stock_info.symbol in ["MRF"]:
-                base_p = 125000.0
-            elif stock_info.symbol in ["PAGEIND", "BOSCHLTD"]:
-                base_p = 35000.0
-            elif stock_info.symbol in ["RELIANCE", "TCS", "BAJFINANCE", "INFY", "HDFCBANK"]:
-                base_p = 2500.0
-            else:
-                base_p = float((seed_val % 4500) + 120)
+            # Fallback: fetch live price from Yahoo chart metadata if full OHLCV history fails
+            base_p = None
+            try:
+                import requests
+                h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                r_meta = requests.get(f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=5d', headers=h, timeout=4)
+                if r_meta.status_code == 200:
+                    meta = r_meta.json()['chart']['result'][0]['meta']
+                    base_p = float(meta.get('regularMarketPrice') or meta.get('chartPreviousClose') or 0)
+            except Exception:
+                pass
+
+            if not base_p or base_p <= 0:
+                seed_val = sum(ord(c) for c in stock_info.symbol)
+                np.random.seed(seed_val)
+                if stock_info.symbol in ["MRF"]:
+                    base_p = 125000.0
+                elif stock_info.symbol in ["PAGEIND", "BOSCHLTD"]:
+                    base_p = 35000.0
+                elif stock_info.symbol in ["RELIANCE", "TCS", "BAJFINANCE", "INFY", "HDFCBANK"]:
+                    base_p = 2500.0
+                else:
+                    base_p = float((seed_val % 4500) + 120)
 
             dates = pd.date_range(end=datetime.now(), periods=100)
             volatility = base_p * 0.012

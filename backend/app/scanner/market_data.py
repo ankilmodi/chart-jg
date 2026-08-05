@@ -68,6 +68,9 @@ def fetch_daily(ticker: str, period: str = "200d", force: bool = False) -> Optio
                 r = requests.get(url, headers=headers, timeout=6)
                 if r.status_code == 200:
                     res = r.json()['chart']['result'][0]
+                    meta = res.get('meta', {})
+                    reg_price = meta.get('regularMarketPrice')
+
                     timestamps = res.get('timestamp') or []
                     quote = (res.get('indicators', {}).get('quote') or [{}])[0]
                     closes = quote.get('close') or []
@@ -87,6 +90,8 @@ def fetch_daily(ticker: str, period: str = "200d", force: bool = False) -> Optio
                         }, index=pd.to_datetime(timestamps[:min_len], unit='s'))
                         df = df.dropna(subset=['close'])
                         if not df.empty:
+                            if reg_price and float(reg_price) > 0:
+                                df.iloc[-1, df.columns.get_loc('close')] = float(reg_price)
                             _set_cache(cache_key, df)
                             _last_known_df[ticker] = df
                             return df
