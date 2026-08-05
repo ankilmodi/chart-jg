@@ -975,18 +975,29 @@ async def get_stock_detail(symbol: str, trade_type: str = Query("buy")):
         result = _build_result(stock_info, df, ind, {}, True, 0.8, trade_type=trade_str)
         return result.dict()
 
-    # 3. Fallback: simulated OHLCV only if Yahoo API fails
-    seed_val = sum(ord(c) for c in clean_sym)
-    np.random.seed(seed_val)
+    # 3. Fallback: fetch live price from Yahoo chart metadata if full OHLCV history fails
+    base_p = None
+    try:
+        import requests
+        h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        r_meta = requests.get(f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=5d', headers=h, timeout=5)
+        if r_meta.status_code == 200:
+            meta = r_meta.json()['chart']['result'][0]['meta']
+            base_p = float(meta.get('regularMarketPrice') or meta.get('chartPreviousClose') or 0)
+    except Exception:
+        pass
 
-    if clean_sym in ["MRF"]:
-        base_p = 125000.0
-    elif clean_sym in ["PAGEIND", "BOSCHLTD", "HONAUT"]:
-        base_p = 35000.0
-    elif clean_sym in ["RELIANCE", "TCS", "BAJFINANCE", "INFY", "HDFCBANK"]:
-        base_p = 2500.0
-    else:
-        base_p = float((seed_val % 4500) + 120)
+    if not base_p or base_p <= 0:
+        seed_val = sum(ord(c) for c in clean_sym)
+        np.random.seed(seed_val)
+        if clean_sym in ["MRF"]:
+            base_p = 125000.0
+        elif clean_sym in ["PAGEIND", "BOSCHLTD", "HONAUT"]:
+            base_p = 35000.0
+        elif clean_sym in ["RELIANCE", "TCS", "BAJFINANCE", "INFY", "HDFCBANK"]:
+            base_p = 2500.0
+        else:
+            base_p = float((seed_val % 4500) + 120)
 
     dates = pd.date_range(end=datetime.now(), periods=100)
     volatility = base_p * 0.012

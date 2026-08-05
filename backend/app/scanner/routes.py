@@ -597,9 +597,21 @@ async def get_stock_detail(symbol: str, trade_type: str = Query("buy")):
         ind = calculate_indicators(df_real)
         return _build_result(stock_info, df_real, ind, {}, True, 0.8, trade_type=trade_str).dict()
 
-    seed_val = sum(ord(c) for c in clean_sym)
-    np.random.seed(seed_val)
-    base_p = 125000.0 if clean_sym == "MRF" else 2500.0
+    base_p = None
+    try:
+        import requests
+        h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        r_meta = requests.get(f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=5d', headers=h, timeout=5)
+        if r_meta.status_code == 200:
+            meta = r_meta.json()['chart']['result'][0]['meta']
+            base_p = float(meta.get('regularMarketPrice') or meta.get('chartPreviousClose') or 0)
+    except Exception:
+        pass
+
+    if not base_p or base_p <= 0:
+        seed_val = sum(ord(c) for c in clean_sym)
+        np.random.seed(seed_val)
+        base_p = 125000.0 if clean_sym == "MRF" else 2500.0
     dates = pd.date_range(end=datetime.now(), periods=100)
     close_prices = base_p + np.cumsum(np.random.randn(100) * (base_p * 0.005))
     df_mock = pd.DataFrame({

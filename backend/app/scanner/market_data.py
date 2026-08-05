@@ -68,16 +68,23 @@ def fetch_daily(ticker: str, period: str = "200d", force: bool = False) -> Optio
                 r = requests.get(url, headers=headers, timeout=6)
                 if r.status_code == 200:
                     res = r.json()['chart']['result'][0]
-                    timestamps = res.get('timestamp')
-                    quote = res['indicators']['quote'][0]
-                    if timestamps and quote.get('close'):
+                    timestamps = res.get('timestamp') or []
+                    quote = (res.get('indicators', {}).get('quote') or [{}])[0]
+                    closes = quote.get('close') or []
+                    opens = quote.get('open') or closes
+                    highs = quote.get('high') or closes
+                    lows = quote.get('low') or closes
+                    vols = quote.get('volume') or [100000] * len(closes)
+
+                    min_len = min(len(timestamps), len(closes), len(opens), len(highs), len(lows))
+                    if min_len > 0:
                         df = pd.DataFrame({
-                            'open': quote.get('open', []),
-                            'high': quote.get('high', []),
-                            'low': quote.get('low', []),
-                            'close': quote.get('close', []),
-                            'volume': quote.get('volume', [])
-                        }, index=pd.to_datetime(timestamps, unit='s'))
+                            'open': opens[:min_len],
+                            'high': highs[:min_len],
+                            'low': lows[:min_len],
+                            'close': closes[:min_len],
+                            'volume': vols[:min_len]
+                        }, index=pd.to_datetime(timestamps[:min_len], unit='s'))
                         df = df.dropna(subset=['close'])
                         if not df.empty:
                             _set_cache(cache_key, df)
