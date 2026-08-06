@@ -404,7 +404,8 @@ def run_full_scan(force: bool = False, trade_type: str = "buy") -> List[ScanResu
     try:
         market    = get_market_overview()
         bullish   = market.market_trend == "bullish"
-        universe  = get_full_universe()
+        from app.scanner.universe import get_by_cap_category
+        universe  = get_by_cap_category("FO")
         tickers   = [s.ticker for s in universe]
 
         data_map  = batch_fetch_daily(tickers, period="200d")
