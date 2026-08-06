@@ -386,12 +386,8 @@ def run_full_scan(force: bool = False, trade_type: str = "buy") -> List[ScanResu
         # Re-build target trade direction if requested
         return _sort_results(_scan_cache, trade_type)
 
-    # ── Fast fallback when cache is cold: return deterministic data immediately
-    if not _scan_cache and not _scan_running:
-        logger.info("Cache cold – serving fast deterministic fallback while scan warms up")
-        fallback = _build_fast_fallback(trade_type=trade_type)
-        if fallback:
-            return _sort_results(fallback, trade_type)
+    # If cache is cold and not already running, we MUST run the scan.
+    # We do not return fallback here, because we need the execution to reach the actual scan logic below.
 
     if _scan_running:
         # Return fast fallback if still running to avoid empty response
