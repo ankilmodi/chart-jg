@@ -9,7 +9,7 @@ export default function TopBuyersPage() {
       icon="🚀"
       subtitle="NSE Stocks with highest positive change %, aggressive buying pressure, and institutional order flow."
       queryKey="top-buyers"
-      fetcher={() => fetchTopBuyers(35)}
+      fetcher={(_tradeType, params) => fetchTopBuyers(35, params)}
     />
   );
 }

@@ -42,6 +42,12 @@ Thumbs.db
 backend/app/scanner/watchlist_store.json
 backend/app/scanner/notifications_store.json
 
+# Temp / debug files
+backend/temp_*.json
+backend/temp_*.txt
+temp_*.json
+temp_*.txt
+
 # Python version file (keep)
 # .python-version
 

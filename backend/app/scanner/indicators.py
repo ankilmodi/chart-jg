@@ -506,7 +506,7 @@ def compute_all(df: pd.DataFrame) -> Dict[str, Any]:
             # Marubozu (full body, no wicks)
             body = abs(c.iloc[-1] - o.iloc[-1])
             full_range = h.iloc[-1] - l.iloc[-1]
-            if body / full_range > 0.95 and c.iloc[-1] > o.iloc[-1]:
+            if full_range > 0 and body / full_range > 0.95 and c.iloc[-1] > o.iloc[-1]:
                 candle_patterns.append("Marubozu")
                 ind["marubozu"] = True
             

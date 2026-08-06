@@ -132,10 +132,10 @@ def start_scheduler() -> None:
     if scheduler.running:
         return
 
-    # Live refresh – every 8 seconds (guarded inside the job)
+    # Live refresh – every 30 seconds (guarded inside the job; was 8s which caused missed-job warnings)
     scheduler.add_job(
         _live_refresh,
-        trigger      = IntervalTrigger(seconds=8),
+        trigger      = IntervalTrigger(seconds=30),
         id           = "live_refresh",
         replace_existing = True,
         max_instances    = 1,
@@ -176,7 +176,7 @@ def start_scheduler() -> None:
 
     scheduler.start()
     logger.info(
-        "Scheduler started — live_refresh:8s | eod_snapshot:15:30 IST | legacy:60s"
+        "Scheduler started — live_refresh:30s | eod_snapshot:15:30 IST | legacy:60s"
     )
 
 

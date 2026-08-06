@@ -9,7 +9,7 @@ export default function VolumeBestPage() {
       icon="📊"
       subtitle="NSE Stocks experiencing heavy institutional volume expansion and volume surge."
       queryKey="volume-best"
-      fetcher={() => fetchVolumeBest(35)}
+      fetcher={(_tradeType, params) => fetchVolumeBest(35, params)}
     />
   );
 }

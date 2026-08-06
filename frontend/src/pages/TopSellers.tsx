@@ -9,7 +9,7 @@ export default function TopSellersPage() {
       icon="📉"
       subtitle="NSE Stocks with highest negative change %, aggressive selling pressure, and short buildup activity."
       queryKey="top-sellers"
-      fetcher={() => fetchTopSellers(35)}
+      fetcher={(_tradeType, params) => fetchTopSellers(35, params)}
     />
   );
 }
