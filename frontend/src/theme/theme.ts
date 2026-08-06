@@ -1,386 +1,360 @@
 /**
- * Professional Market-Standard Theme
- * Mobile-optimized colors, gradients, and smooth transitions
+ * Market-Standard Terminal Theme — Bloomberg / Zerodha / Sensibull Style
+ * Deep navy base, electric greens/reds, glassmorphism cards, gradient accents
  */
 import { createTheme, type Theme } from '@mui/material/styles';
 
-// Market-standard trading colors
-const TRADING_GREEN = '#00e676';
-const TRADING_RED = '#ff1744';
-const TRADING_AMBER = '#ffc107';
-const ACCENT_BLUE = '#2196f3';
-const ACCENT_PURPLE = '#9c27b0';
+// ─── Color Tokens ────────────────────────────────────────────────────────────
+export const C = {
+  // Trading signals
+  bullGreen:   '#00e676',
+  bullGreenDim:'#00c853',
+  bearRed:     '#ff1744',
+  bearRedDim:  '#d50000',
+  amber:       '#ffab00',
+  amberDim:    '#ff8f00',
 
-// Dark theme palette — professional trading terminal style
+  // Brand accent
+  neonBlue:    '#00b0ff',
+  neonPurple:  '#d500f9',
+  neonCyan:    '#00e5ff',
+  neonGold:    '#ffd600',
+
+  // Dark backgrounds — deep navy layers
+  bg0:         '#060b18',   // deepest
+  bg1:         '#0b1120',   // default background
+  bg2:         '#0f1729',   // paper
+  bg3:         '#141e33',   // elevated card
+  bg4:         '#1a2540',   // hover/focus surface
+
+  // Borders / dividers
+  border:      'rgba(0,176,255,0.12)',
+  borderBright:'rgba(0,176,255,0.25)',
+
+  // Text
+  textPrimary:   '#e2e8f8',
+  textSecondary: '#7b8db5',
+  textMuted:     '#445070',
+
+  // Light mode
+  lBg0:        '#eef2fc',
+  lBg1:        '#f4f7ff',
+  lPaper:      '#ffffff',
+  lBorder:     'rgba(21,101,192,0.12)',
+  lText:       '#0d1b3e',
+  lTextSub:    '#3d5a9e',
+};
+
+// ─── Dark Palette ─────────────────────────────────────────────────────────────
 const darkPalette = {
   mode: 'dark' as const,
-  primary: {
-    main: ACCENT_BLUE,
-    light: '#64b5f6',
-    dark: '#1565c0',
-    contrastText: '#ffffff',
-  },
-  secondary: {
-    main: ACCENT_PURPLE,
-    light: '#ba68c8',
-    dark: '#7b1fa2',
-    contrastText: '#ffffff',
-  },
-  success: {
-    main: TRADING_GREEN,
-    light: '#69f0ae',
-    dark: '#00c853',
-    contrastText: '#000000',
-  },
-  error: {
-    main: TRADING_RED,
-    light: '#ff5252',
-    dark: '#d50000',
-    contrastText: '#ffffff',
-  },
-  warning: {
-    main: TRADING_AMBER,
-    light: '#ffd54f',
-    dark: '#ffa000',
-    contrastText: '#000000',
-  },
-  info: {
-    main: '#00bcd4',
-    light: '#4dd0e1',
-    dark: '#0097a7',
-    contrastText: '#ffffff',
-  },
-  background: {
-    default: '#0a0e1a', // Deep navy blue
-    paper: '#0f1629', // Slightly lighter navy
-  },
-  text: {
-    primary: '#e8eaf6', // Light indigo
-    secondary: '#9fa8da', // Muted indigo
-    disabled: '#5c6bc0',
-  },
-  divider: 'rgba(159, 168, 218, 0.12)',
+  primary:   { main: C.neonBlue,  light: '#64dfff', dark: '#0077b6',   contrastText: '#000' },
+  secondary: { main: C.neonPurple,light: '#ea00ff', dark: '#9900b3',   contrastText: '#fff' },
+  success:   { main: C.bullGreen, light: '#69f0ae', dark: C.bullGreenDim, contrastText: '#000' },
+  error:     { main: C.bearRed,   light: '#ff5252', dark: C.bearRedDim,   contrastText: '#fff' },
+  warning:   { main: C.amber,     light: '#ffd740', dark: C.amberDim,    contrastText: '#000' },
+  info:      { main: C.neonCyan,  light: '#80efff', dark: '#006f7f',    contrastText: '#000' },
+  background:{ default: C.bg1,    paper: C.bg2 },
+  text:      { primary: C.textPrimary, secondary: C.textSecondary, disabled: C.textMuted },
+  divider:   C.border,
   action: {
-    active: '#9fa8da',
-    hover: 'rgba(159, 168, 218, 0.08)',
-    selected: 'rgba(159, 168, 218, 0.16)',
-    disabled: 'rgba(159, 168, 218, 0.3)',
-    disabledBackground: 'rgba(159, 168, 218, 0.12)',
+    active:            C.textSecondary,
+    hover:             'rgba(0,176,255,0.06)',
+    selected:          'rgba(0,176,255,0.12)',
+    disabled:          'rgba(123,141,181,0.3)',
+    disabledBackground:'rgba(123,141,181,0.08)',
   },
 };
 
-// Light theme palette — clean modern style
+// ─── Light Palette ────────────────────────────────────────────────────────────
 const lightPalette = {
   mode: 'light' as const,
-  primary: {
-    main: '#1565c0', // Deep blue
-    light: '#5e92f3',
-    dark: '#003c8f',
-    contrastText: '#ffffff',
-  },
-  secondary: {
-    main: '#6200ea', // Deep purple
-    light: '#9d46ff',
-    dark: '#0a00b6',
-    contrastText: '#ffffff',
-  },
-  success: {
-    main: '#2e7d32', // Forest green
-    light: '#60ad5e',
-    dark: '#005005',
-    contrastText: '#ffffff',
-  },
-  error: {
-    main: '#c62828', // Dark red
-    light: '#ff5f52',
-    dark: '#8e0000',
-    contrastText: '#ffffff',
-  },
-  warning: {
-    main: '#f57f17', // Dark amber
-    light: '#ffb04c',
-    dark: '#bc5100',
-    contrastText: '#000000',
-  },
-  info: {
-    main: '#0288d1',
-    light: '#5eb8ff',
-    dark: '#005b9f',
-    contrastText: '#ffffff',
-  },
-  background: {
-    default: '#f0f4ff', // Soft blue-white
-    paper: '#ffffff',
-  },
-  text: {
-    primary: '#1a237e', // Deep indigo
-    secondary: '#5c6bc0', // Medium indigo
-    disabled: '#9fa8da',
-  },
-  divider: 'rgba(26, 35, 126, 0.12)',
+  primary:   { main: '#1565c0', light: '#5e92f3', dark: '#003c8f', contrastText: '#fff' },
+  secondary: { main: '#6200ea', light: '#9d46ff', dark: '#0a00b6', contrastText: '#fff' },
+  success:   { main: '#1b5e20', light: '#43a047', dark: '#003300', contrastText: '#fff' },
+  error:     { main: '#b71c1c', light: '#ef5350', dark: '#7f0000', contrastText: '#fff' },
+  warning:   { main: '#e65100', light: '#ff9800', dark: '#ac1900', contrastText: '#fff' },
+  info:      { main: '#0277bd', light: '#58a5f0', dark: '#004c8c', contrastText: '#fff' },
+  background:{ default: C.lBg0, paper: C.lPaper },
+  text:      { primary: C.lText, secondary: C.lTextSub, disabled: '#8fa4d4' },
+  divider:   C.lBorder,
   action: {
-    active: '#5c6bc0',
-    hover: 'rgba(92, 107, 192, 0.08)',
-    selected: 'rgba(92, 107, 192, 0.16)',
-    disabled: 'rgba(92, 107, 192, 0.3)',
-    disabledBackground: 'rgba(92, 107, 192, 0.12)',
+    active:             C.lTextSub,
+    hover:             'rgba(21,101,192,0.06)',
+    selected:          'rgba(21,101,192,0.12)',
+    disabled:          'rgba(61,90,158,0.3)',
+    disabledBackground:'rgba(61,90,158,0.08)',
   },
 };
 
+// ─── Typography ───────────────────────────────────────────────────────────────
 const typography = {
-  fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
-  h1: { fontWeight: 800, letterSpacing: '-0.02em', fontSize: '2.5rem' },
-  h2: { fontWeight: 800, letterSpacing: '-0.02em', fontSize: '2rem' },
-  h3: { fontWeight: 700, letterSpacing: '-0.01em', fontSize: '1.75rem' },
-  h4: { fontWeight: 700, letterSpacing: '-0.01em', fontSize: '1.5rem' },
-  h5: { fontWeight: 600, fontSize: '1.25rem' },
-  h6: { fontWeight: 600, fontSize: '1rem' },
-  subtitle1: { fontWeight: 600, fontSize: '1rem' },
-  subtitle2: { fontWeight: 600, fontSize: '0.875rem' },
-  body1: { fontSize: '0.875rem', lineHeight: 1.6 },
-  body2: { fontSize: '0.8125rem', lineHeight: 1.5 },
-  button: { fontWeight: 600, textTransform: 'none' as const, letterSpacing: 0.3 },
-  caption: { fontSize: '0.75rem', lineHeight: 1.4 },
-  overline: { fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 1 },
+  fontFamily: '"Inter", "JetBrains Mono", "Roboto Mono", "Roboto", sans-serif',
+  h1: { fontWeight: 900, letterSpacing: '-0.03em' },
+  h2: { fontWeight: 900, letterSpacing: '-0.02em' },
+  h3: { fontWeight: 800, letterSpacing: '-0.015em' },
+  h4: { fontWeight: 800, letterSpacing: '-0.01em' },
+  h5: { fontWeight: 700, letterSpacing: '-0.005em' },
+  h6: { fontWeight: 700 },
+  subtitle1: { fontWeight: 600 },
+  subtitle2: { fontWeight: 700, letterSpacing: 0.2 },
+  body1: { fontSize: '0.875rem', lineHeight: 1.65 },
+  body2: { fontSize: '0.8125rem', lineHeight: 1.55 },
+  button: { fontWeight: 700, textTransform: 'none' as const, letterSpacing: 0.4 },
+  caption: { fontSize: '0.7rem', lineHeight: 1.4, letterSpacing: 0.3 },
+  overline: { fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase' as const, letterSpacing: 1.5 },
 };
 
+// ─── Component Overrides ──────────────────────────────────────────────────────
 const components = {
   MuiCssBaseline: {
     styleOverrides: {
-      html: {
-        width: '100%',
-        height: '100%',
-        overflowX: 'hidden' as const,
-        WebkitFontSmoothing: 'antialiased',
-        MozOsxFontSmoothing: 'grayscale',
-      },
-      body: {
-        width: '100%',
-        height: '100%',
-        overflowX: 'hidden' as const,
-        margin: 0,
-        padding: 0,
-        boxSizing: 'border-box' as const,
-      },
-      '#root': {
-        width: '100%',
-        minHeight: '100vh',
-        overflowX: 'hidden' as const,
-      },
-      // Smooth scrolling
-      '*': {
-        scrollBehavior: 'smooth' as const,
-      },
-      // Custom scrollbar (dark)
-      '::-webkit-scrollbar': {
-        width: '8px',
-        height: '8px',
-      },
-      '::-webkit-scrollbar-track': {
-        background: 'rgba(0,0,0,0.1)',
-      },
+      html: { width: '100%', height: '100%', overflowX: 'hidden', WebkitFontSmoothing: 'antialiased' },
+      body: { width: '100%', height: '100%', overflowX: 'hidden', margin: 0, padding: 0 },
+      '#root': { width: '100%', minHeight: '100vh', overflowX: 'hidden' },
+      // Custom terminal scrollbar
+      '::-webkit-scrollbar':       { width: '5px', height: '5px' },
+      '::-webkit-scrollbar-track': { background: 'transparent' },
       '::-webkit-scrollbar-thumb': {
-        background: 'rgba(255,255,255,0.2)',
-        borderRadius: '4px',
-        '&:hover': {
-          background: 'rgba(255,255,255,0.3)',
-        },
+        background: 'rgba(0,176,255,0.25)',
+        borderRadius: '3px',
+        '&:hover': { background: 'rgba(0,176,255,0.45)' },
       },
+      // Selection highlight
+      '::selection': { background: 'rgba(0,176,255,0.3)', color: '#fff' },
     },
   },
+
   MuiCard: {
     styleOverrides: {
-      root: {
-        borderRadius: 12,
+      root: ({ theme }: any) => ({
+        borderRadius: 14,
         backgroundImage: 'none',
-        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        border: `1px solid ${theme.palette.mode === 'dark' ? C.border : C.lBorder}`,
+        transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
         '&:hover': {
-          transform: 'translateY(-2px)',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+          transform: 'translateY(-3px)',
+          boxShadow: theme.palette.mode === 'dark'
+            ? '0 8px 32px rgba(0,176,255,0.12), 0 2px 8px rgba(0,0,0,0.4)'
+            : '0 8px 24px rgba(21,101,192,0.15)',
+          borderColor: theme.palette.mode === 'dark' ? C.borderBright : 'rgba(21,101,192,0.3)',
         },
-      },
+      }),
     },
   },
+
   MuiPaper: {
     styleOverrides: {
-      root: {
+      root: ({ theme }: any) => ({
         backgroundImage: 'none',
-      },
-      rounded: {
-        borderRadius: 12,
-      },
-      elevation1: {
-        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-      },
-      elevation2: {
-        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-      },
-      elevation3: {
-        boxShadow: '0 6px 16px rgba(0,0,0,0.12)',
-      },
+        border: `1px solid ${theme.palette.mode === 'dark' ? C.border : C.lBorder}`,
+      }),
+      rounded: { borderRadius: 14 },
+      elevation0: { border: 'none' },
+      elevation1: { boxShadow: '0 2px 8px rgba(0,0,0,0.15)' },
+      elevation2: { boxShadow: '0 4px 16px rgba(0,0,0,0.2)' },
+      elevation3: { boxShadow: '0 6px 24px rgba(0,0,0,0.25)' },
+      elevation8: { boxShadow: '0 8px 32px rgba(0,0,0,0.35)' },
     },
   },
+
+  MuiAppBar: {
+    styleOverrides: {
+      root: ({ theme }: any) => ({
+        backgroundImage: 'none',
+        borderBottom: `1px solid ${theme.palette.mode === 'dark' ? C.border : C.lBorder}`,
+        boxShadow: 'none',
+      }),
+    },
+  },
+
+  MuiDrawer: {
+    styleOverrides: {
+      paper: ({ theme }: any) => ({
+        backgroundImage: 'none',
+        borderRight: `1px solid ${theme.palette.mode === 'dark' ? C.border : C.lBorder}`,
+        background: theme.palette.mode === 'dark' ? C.bg1 : '#fff',
+      }),
+    },
+  },
+
   MuiChip: {
     styleOverrides: {
       root: {
-        fontWeight: 700,
-        borderRadius: 8,
-        transition: 'all 0.2s ease',
-        '&:hover': {
-          transform: 'scale(1.05)',
-        },
-      },
-      filled: {
         fontWeight: 800,
+        borderRadius: 6,
+        transition: 'all 0.2s',
+        letterSpacing: 0.3,
       },
+      filled: { fontWeight: 900 },
+      sizeSmall: { height: 20, fontSize: '0.65rem' },
     },
   },
+
   MuiButton: {
     styleOverrides: {
       root: {
-        borderRadius: 10,
-        textTransform: 'none' as const,
-        fontWeight: 600,
-        padding: '8px 20px',
-        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-        '&:hover': {
-          transform: 'translateY(-1px)',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-        },
-        '&:active': {
-          transform: 'translateY(0)',
-        },
+        borderRadius: 8,
+        fontWeight: 700,
+        transition: 'all 0.2s cubic-bezier(0.4,0,0.2,1)',
+        '&:hover': { transform: 'translateY(-1px)', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' },
+        '&:active': { transform: 'translateY(0) scale(0.97)' },
       },
-      contained: {
-        boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+      contained: { boxShadow: '0 2px 8px rgba(0,0,0,0.2)' },
+      containedPrimary: {
+        background: 'linear-gradient(135deg, #00b0ff 0%, #0077b6 100%)',
+        '&:hover': { background: 'linear-gradient(135deg, #29c5ff 0%, #0090e0 100%)' },
       },
-      sizeLarge: {
-        padding: '12px 28px',
-        fontSize: '1rem',
-      },
-      sizeSmall: {
-        padding: '6px 16px',
-        fontSize: '0.813rem',
-      },
+      outlinedPrimary: { borderWidth: '1.5px', '&:hover': { borderWidth: '1.5px' } },
+      sizeSmall: { padding: '4px 12px', fontSize: '0.78rem' },
+      sizeLarge: { padding: '10px 28px', fontSize: '1rem' },
     },
   },
+
   MuiIconButton: {
     styleOverrides: {
       root: {
-        transition: 'all 0.2s ease',
-        '&:hover': {
-          transform: 'scale(1.1)',
-        },
-        '&:active': {
-          transform: 'scale(0.95)',
-        },
+        transition: 'all 0.2s',
+        '&:hover': { transform: 'scale(1.1)' },
+        '&:active': { transform: 'scale(0.92)' },
       },
     },
   },
-  MuiTooltip: {
-    styleOverrides: {
-      tooltip: {
-        borderRadius: 8,
-        padding: '8px 12px',
-        fontSize: '0.75rem',
-        fontWeight: 600,
-        backdropFilter: 'blur(10px)',
-      },
-    },
-  },
+
   MuiListItemButton: {
     styleOverrides: {
       root: {
         borderRadius: 8,
-        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+        transition: 'all 0.18s cubic-bezier(0.4,0,0.2,1)',
+        '&.Mui-selected': {
+          background: 'linear-gradient(90deg, rgba(0,176,255,0.18) 0%, rgba(0,176,255,0.06) 100%)',
+          borderLeft: `3px solid ${C.neonBlue}`,
+          paddingLeft: 'calc(16px - 3px)',
+          '&:hover': {
+            background: 'linear-gradient(90deg, rgba(0,176,255,0.24) 0%, rgba(0,176,255,0.10) 100%)',
+          },
+        },
+        '&:hover': { paddingLeft: 20 },
       },
     },
   },
+
   MuiTextField: {
     styleOverrides: {
       root: {
         '& .MuiOutlinedInput-root': {
-          borderRadius: 10,
-          transition: 'all 0.2s ease',
-          '&:hover': {
-            transform: 'translateY(-1px)',
-          },
-          '&.Mui-focused': {
-            transform: 'translateY(-1px)',
-            boxShadow: '0 4px 12px rgba(33, 150, 243, 0.2)',
-          },
+          borderRadius: 8,
+          transition: 'all 0.2s',
+          '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(0,176,255,0.15)' },
         },
       },
     },
   },
+
   MuiTableCell: {
     styleOverrides: {
       root: {
-        borderBottom: '1px solid rgba(224, 224, 224, 0.08)',
+        borderBottom: `1px solid ${C.border}`,
+        padding: '10px 14px',
       },
       head: {
-        fontWeight: 700,
-        fontSize: '0.813rem',
+        fontWeight: 800,
+        fontSize: '0.7rem',
         textTransform: 'uppercase' as const,
-        letterSpacing: 0.5,
+        letterSpacing: 0.8,
+        borderBottom: `2px solid ${C.borderBright}`,
+      },
+      stickyHeader: {
+        backgroundImage: 'none',
       },
     },
   },
-  MuiAlert: {
+
+  MuiTableRow: {
     styleOverrides: {
       root: {
-        borderRadius: 10,
-        fontSize: '0.875rem',
-        fontWeight: 600,
+        transition: 'background 0.15s',
+        '&:hover': {
+          background: 'rgba(0,176,255,0.04) !important',
+        },
       },
     },
   },
+
   MuiLinearProgress: {
     styleOverrides: {
-      root: {
-        borderRadius: 4,
-        height: 6,
+      root: { borderRadius: 4, height: 5, backgroundColor: 'rgba(255,255,255,0.06)' },
+    },
+  },
+
+  MuiTooltip: {
+    styleOverrides: {
+      tooltip: {
+        borderRadius: 6,
+        padding: '6px 10px',
+        fontSize: '0.72rem',
+        fontWeight: 700,
+        backdropFilter: 'blur(12px)',
+        background: 'rgba(11,17,32,0.92)',
+        border: `1px solid ${C.border}`,
       },
     },
   },
+
+  MuiAlert: {
+    styleOverrides: {
+      root: { borderRadius: 10, fontWeight: 600 },
+    },
+  },
+
   MuiBadge: {
     styleOverrides: {
-      badge: {
+      badge: { fontWeight: 800, fontSize: '0.65rem', minWidth: 17, height: 17, padding: '0 4px' },
+    },
+  },
+
+  MuiDivider: {
+    styleOverrides: {
+      root: { borderColor: C.border },
+    },
+  },
+
+  MuiToggleButton: {
+    styleOverrides: {
+      root: {
         fontWeight: 700,
-        fontSize: '0.7rem',
-        minWidth: 18,
-        height: 18,
+        fontSize: '0.75rem',
+        letterSpacing: 0.3,
+        borderRadius: '6px !important',
+        transition: 'all 0.2s',
+        '&.Mui-selected': {
+          background: 'linear-gradient(135deg, rgba(0,176,255,0.2) 0%, rgba(0,176,255,0.1) 100%)',
+        },
+      },
+    },
+  },
+
+  MuiBottomNavigationAction: {
+    styleOverrides: {
+      root: {
+        transition: 'all 0.2s',
+        '&.Mui-selected': { color: C.neonBlue },
       },
     },
   },
 };
 
+// ─── Theme Factory ────────────────────────────────────────────────────────────
 export const createAppTheme = (mode: 'dark' | 'light'): Theme =>
   createTheme({
-    breakpoints: {
-      values: {
-        xs: 0,
-        sm: 600,
-        md: 960,
-        lg: 1280,
-        xl: 1920,
-      },
-    },
+    breakpoints: { values: { xs: 0, sm: 600, md: 960, lg: 1280, xl: 1920 } },
     palette: mode === 'dark' ? darkPalette : lightPalette,
     typography,
     components,
     shape: { borderRadius: 10 },
     spacing: 8,
     transitions: {
-      duration: {
-        shortest: 150,
-        shorter: 200,
-        short: 250,
-        standard: 300,
-        complex: 375,
-        enteringScreen: 225,
-        leavingScreen: 195,
-      },
+      duration: { shortest: 120, shorter: 180, short: 220, standard: 280, complex: 360, enteringScreen: 210, leavingScreen: 175 },
       easing: {
         easeInOut: 'cubic-bezier(0.4, 0, 0.2, 1)',
         easeOut: 'cubic-bezier(0.0, 0, 0.2, 1)',
@@ -390,36 +364,36 @@ export const createAppTheme = (mode: 'dark' | 'light'): Theme =>
     },
   });
 
-// Utility color helpers (theme-independent)
+// ─── Color Helpers ────────────────────────────────────────────────────────────
 export const signalColor = (signal: string) => {
   const s = signal.toUpperCase();
-  if (s === 'BUY' || s === 'STRONG BUY') return TRADING_GREEN;
-  if (s === 'SELL' || s === 'STRONG SELL') return TRADING_RED;
-  return TRADING_AMBER;
+  if (s === 'BUY' || s === 'STRONG BUY') return C.bullGreen;
+  if (s === 'SELL' || s === 'STRONG SELL') return C.bearRed;
+  return C.amber;
 };
 
-export const changeColor = (value: number) => (value >= 0 ? TRADING_GREEN : TRADING_RED);
+export const changeColor = (value: number) => (value >= 0 ? C.bullGreen : C.bearRed);
 
 export const trendColor = (trend: string) => {
   const t = trend.toLowerCase();
-  if (t === 'bullish' || t === 'strong uptrend') return TRADING_GREEN;
-  if (t === 'bearish' || t === 'weak downtrend') return TRADING_RED;
-  return TRADING_AMBER;
+  if (t.includes('bull') || t.includes('up')) return C.bullGreen;
+  if (t.includes('bear') || t.includes('down')) return C.bearRed;
+  return C.amber;
 };
 
 export const scoreColor = (score: number) => {
-  if (score >= 75) return TRADING_GREEN;
-  if (score >= 50) return TRADING_AMBER;
-  return TRADING_RED;
+  if (score >= 75) return C.bullGreen;
+  if (score >= 50) return C.amber;
+  return C.bearRed;
 };
 
-// Gradient utilities
 export const gradients = {
-  primary: 'linear-gradient(135deg, #2196f3 0%, #9c27b0 100%)',
-  success: 'linear-gradient(135deg, #00e676 0%, #00c853 100%)',
-  error: 'linear-gradient(135deg, #ff1744 0%, #d50000 100%)',
-  warning: 'linear-gradient(135deg, #ffc107 0%, #ff9800 100%)',
-  info: 'linear-gradient(135deg, #00bcd4 0%, #0288d1 100%)',
-  dark: 'linear-gradient(135deg, #0a0e1a 0%, #0f1629 100%)',
-  light: 'linear-gradient(135deg, #f0f4ff 0%, #ffffff 100%)',
+  primary:  `linear-gradient(135deg, ${C.neonBlue} 0%, ${C.neonPurple} 100%)`,
+  success:  `linear-gradient(135deg, ${C.bullGreen} 0%, ${C.bullGreenDim} 100%)`,
+  error:    `linear-gradient(135deg, ${C.bearRed} 0%, ${C.bearRedDim} 100%)`,
+  warning:  `linear-gradient(135deg, ${C.amber} 0%, ${C.amberDim} 100%)`,
+  info:     `linear-gradient(135deg, ${C.neonCyan} 0%, ${C.neonBlue} 100%)`,
+  dark:     `linear-gradient(135deg, ${C.bg0} 0%, ${C.bg2} 100%)`,
+  header:   `linear-gradient(135deg, ${C.bg1} 0%, ${C.bg2} 100%)`,
+  glow:     `radial-gradient(ellipse at top, rgba(0,176,255,0.08) 0%, transparent 70%)`,
 };

@@ -2,20 +2,22 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Paper, Chip, Box, Typography, TableSortLabel,
-  LinearProgress, Stack, TablePagination, useTheme, useMediaQuery,
-  Card, CardContent, CardActionArea, Grid, IconButton, Collapse,
+  Paper, Chip, Box, Typography, TableSortLabel, LinearProgress,
+  Stack, TablePagination, useTheme, useMediaQuery,
+  Card, CardActionArea, Grid, IconButton, Collapse,
+  Divider,
 } from '@mui/material';
-import { TrendingUp, TrendingDown, ExpandMore } from '@mui/icons-material';
+import { TrendingUp, TrendingDown, ExpandMore, ExpandLess } from '@mui/icons-material';
 import type { StockResult } from '../utils/types';
 
+// ─── Types ────────────────────────────────────────────────────────────────────
 interface Column {
   id: keyof StockResult | 'action' | 'score_200';
   label: string;
   minWidth?: number;
   align?: 'left' | 'center' | 'right';
   format?: (value: any, row: StockResult) => React.ReactNode;
-  hideOnMobile?: boolean;
+  hideOnTablet?: boolean;
 }
 
 interface Props {
@@ -24,19 +26,72 @@ interface Props {
   compact?: boolean;
 }
 
+// ─── Signal chip helper ───────────────────────────────────────────────────────
+const SignalChip: React.FC<{ signal: string }> = ({ signal }) => {
+  const colorMap: Record<string, any> = {
+    'STRONG BUY': 'success',
+    'BUY':        'success',
+    'ACCUMULATE': 'info',
+    'WATCH':      'info',
+    'HOLD':       'warning',
+    'SELL':       'error',
+    'STRONG SELL':'error',
+  };
+  return (
+    <Chip
+      label={signal}
+      size="small"
+      color={colorMap[signal] || 'default'}
+      sx={{ fontWeight: 800, height: 20, fontSize: '0.62rem', letterSpacing: 0.3 }}
+    />
+  );
+};
+
+// ─── Score bar ────────────────────────────────────────────────────────────────
+const ScoreBar: React.FC<{ score200: number; grade: string; isBuy: boolean }> = ({ score200, grade, isBuy }) => (
+  <Box sx={{ minWidth: 90 }}>
+    <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center" mb={0.3}>
+      <Typography sx={{ fontSize: 12, fontWeight: 900, color: isBuy ? 'success.main' : 'error.main' }}>
+        {score200.toFixed(0)}
+      </Typography>
+      <Typography sx={{ fontSize: 9.5, color: 'text.secondary' }}>/200</Typography>
+      <Chip
+        label={grade}
+        size="small"
+        color={isBuy ? 'success' : 'error'}
+        sx={{ height: 16, fontSize: '0.58rem', fontWeight: 900 }}
+      />
+    </Stack>
+    <LinearProgress
+      variant="determinate"
+      value={Math.min(100, (score200 / 200) * 100)}
+      sx={{
+        height: 4, borderRadius: 2,
+        bgcolor: 'rgba(255,255,255,0.07)',
+        '& .MuiLinearProgress-bar': { bgcolor: isBuy ? 'success.main' : 'error.main', borderRadius: 2 },
+      }}
+    />
+  </Box>
+);
+
+// ─── Desktop columns ──────────────────────────────────────────────────────────
 const defaultColumns: Column[] = [
   {
     id: 'symbol',
     label: 'Symbol',
-    minWidth: 120,
+    minWidth: 130,
     format: (val, row) => (
       <Box>
         <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap">
-          <Typography variant="body2" fontWeight={800}>{val}</Typography>
-          <Chip label={row.cap_category || 'Large Cap'} size="small" color="secondary" variant="outlined" sx={{ height: 16, fontSize: 8, fontWeight: 700 }} />
-          {row.fo_eligible && <Chip label="F&O" size="small" color="primary" variant="outlined" sx={{ height: 16, fontSize: 8, fontWeight: 700 }} />}
+          <Typography sx={{ fontSize: 13, fontWeight: 800 }}>{val}</Typography>
+          <Chip label={row.cap_category || 'Large'} size="small" variant="outlined" color="secondary"
+            sx={{ height: 15, fontSize: '0.58rem', fontWeight: 700 }} />
+          {row.fo_eligible && (
+            <Chip label="F&O" size="small" variant="outlined" color="primary"
+              sx={{ height: 15, fontSize: '0.58rem', fontWeight: 700 }} />
+          )}
         </Stack>
-        <Typography variant="caption" color="text.secondary" display="block" noWrap sx={{ maxWidth: 140 }}>
+        <Typography sx={{ fontSize: 10.5, color: 'text.secondary', mt: 0.2 }} noWrap>
           {row.name}
         </Typography>
       </Box>
@@ -45,325 +100,341 @@ const defaultColumns: Column[] = [
   {
     id: 'current_price',
     label: 'Price',
-    minWidth: 90,
+    minWidth: 80,
     align: 'right',
-    format: (val) => val != null ? `₹${val.toFixed(2)}` : '—',
-  },
-  {
-    id: 'change_pct',
-    label: 'Change %',
-    minWidth: 85,
-    align: 'right',
-    format: (val) => val != null ? (
-      <Typography variant="body2" color={val >= 0 ? 'success.main' : 'error.main'} fontWeight={700}>
-        {val >= 0 ? '+' : ''}{val.toFixed(2)}%
+    format: val => val != null ? (
+      <Typography sx={{ fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+        ₹{val.toFixed(2)}
       </Typography>
     ) : '—',
   },
   {
+    id: 'change_pct',
+    label: 'Chg %',
+    minWidth: 75,
+    align: 'right',
+    format: val => val != null ? (
+      <Stack direction="row" spacing={0.3} alignItems="center" justifyContent="flex-end">
+        {val >= 0 ? <TrendingUp sx={{ fontSize: 13, color: 'success.main' }} /> : <TrendingDown sx={{ fontSize: 13, color: 'error.main' }} />}
+        <Typography sx={{ fontSize: 12, fontWeight: 800, color: val >= 0 ? 'success.main' : 'error.main', fontVariantNumeric: 'tabular-nums' }}>
+          {val >= 0 ? '+' : ''}{val.toFixed(2)}%
+        </Typography>
+      </Stack>
+    ) : '—',
+  },
+  {
     id: 'score_200',
-    label: 'AI Rating (200 Pts)',
-    minWidth: 130,
+    label: 'AI Score',
+    minWidth: 110,
     align: 'center',
-    hideOnMobile: true,
+    hideOnTablet: true,
     format: (_, row) => {
       const score200 = Math.min(200, row.institutional_score || (row.buy_score ? row.buy_score * 2 : 180));
       const grade = row.institutional_grade || (score200 >= 180 ? 'A+' : score200 >= 160 ? 'A' : 'B');
       const isBuy = row.trade_type !== 'sell' && row.signal !== 'SELL' && row.signal !== 'STRONG SELL';
-      return (
-        <Box sx={{ display: 'inline-block', minWidth: 100 }}>
-          <Stack direction="row" spacing={0.5} justifyContent="center" alignItems="center">
-            <Typography variant="body2" fontWeight={900} color={isBuy ? 'success.main' : 'error.main'}>
-              {score200.toFixed(0)} <Typography component="span" variant="caption" color="text.secondary">/ 200</Typography>
-            </Typography>
-            <Chip label={grade} size="small" color={isBuy ? 'success' : 'error'} sx={{ height: 16, fontSize: 9, fontWeight: 900 }} />
-          </Stack>
-          <LinearProgress variant="determinate" value={Math.min(100, (score200 / 200) * 100)}
-            sx={{ height: 4, borderRadius: 1, mt: 0.5,
-                  '& .MuiLinearProgress-bar': {
-                    bgcolor: isBuy ? 'success.main' : 'error.main',
-                  } }} />
-        </Box>
-      );
+      return <ScoreBar score200={score200} grade={grade} isBuy={isBuy} />;
     },
   },
   {
     id: 'signal',
     label: 'Signal',
-    minWidth: 110,
+    minWidth: 100,
     align: 'center',
-    format: (val) => {
-      const colors: Record<string, any> = {
-        'STRONG BUY': 'success',
-        'BUY':        'success',
-        'ACCUMULATE': 'info',
-        'WATCH':      'info',
-        'HOLD':       'warning',
-        'SELL':       'error',
-        'STRONG SELL':'error',
-      };
-      return val ? <Chip label={val} size="small" color={colors[val] || 'default'} sx={{ fontWeight: 800 }} /> : '—';
-    },
-  },
-  {
-    id: 'order_flow_score',
-    label: 'Real Order Flow',
-    minWidth: 120,
-    align: 'center',
-    hideOnMobile: true,
-    format: (_, row) => (
-      <Box>
-        <Typography variant="caption" color="success.main" fontWeight={700} display="block">
-          {row.real_buy_pressure_pct || 68}% Aggressive
-        </Typography>
-        <Typography variant="caption" color="text.secondary" fontSize={9}>
-          Spoofing Risk: {row.spoofing_prob_pct || 8}% (Low)
-        </Typography>
-      </Box>
-    ),
+    format: val => val ? <SignalChip signal={val} /> : '—',
   },
   {
     id: 'rsi',
     label: 'RSI',
     minWidth: 55,
     align: 'right',
-    hideOnMobile: true,
-    format: (val) => val != null ? val.toFixed(1) : '—',
+    hideOnTablet: true,
+    format: val => val != null ? (
+      <Typography sx={{
+        fontSize: 12, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+        color: val > 70 ? 'error.main' : val < 30 ? 'success.main' : 'text.primary',
+      }}>
+        {val.toFixed(1)}
+      </Typography>
+    ) : '—',
   },
   {
     id: 'volume_ratio',
-    label: 'Vol Ratio',
-    minWidth: 75,
+    label: 'Vol ×',
+    minWidth: 65,
     align: 'right',
-    hideOnMobile: true,
-    format: (val) => val != null ? `${val.toFixed(2)}x` : '—',
+    hideOnTablet: true,
+    format: val => val != null ? (
+      <Typography sx={{
+        fontSize: 12, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+        color: val >= 2 ? 'warning.main' : 'text.primary',
+      }}>
+        {val.toFixed(2)}×
+      </Typography>
+    ) : '—',
   },
   {
     id: 'action',
-    label: 'Report',
-    minWidth: 90,
+    label: 'Detail',
+    minWidth: 72,
     align: 'center',
-    hideOnMobile: true,
-    format: (_, row) => (
-      <Chip label="View 🏆" size="small" color="primary" sx={{ height: 22, fontSize: 10, fontWeight: 700 }} />
+    hideOnTablet: true,
+    format: () => (
+      <Chip label="View" size="small" color="primary" sx={{ height: 20, fontSize: '0.62rem', fontWeight: 800, cursor: 'pointer' }} />
     ),
   },
 ];
 
-// Mobile Card Component
+// ─── Mobile Stock Card ────────────────────────────────────────────────────────
 const StockCard: React.FC<{ stock: StockResult; onClick: () => void }> = ({ stock, onClick }) => {
   const [expanded, setExpanded] = useState(false);
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+
   const score200 = Math.min(200, stock.institutional_score || (stock.buy_score ? stock.buy_score * 2 : 180));
   const grade = stock.institutional_grade || (score200 >= 180 ? 'A+' : score200 >= 160 ? 'A' : 'B');
-  const isBuy = stock.trade_type !== 'sell' && stock.signal !== 'SELL';
+  const isBuy = stock.trade_type !== 'sell' && stock.signal !== 'SELL' && stock.signal !== 'STRONG SELL';
+  const up = (stock.change_pct ?? 0) >= 0;
 
   return (
     <Card
-      elevation={2}
+      elevation={0}
       sx={{
-        borderRadius: 2,
+        borderRadius: 3,
+        border: '1px solid', borderColor: 'divider',
         overflow: 'hidden',
-        transition: 'all 0.2s',
-        '&:active': { transform: 'scale(0.98)' },
+        transition: 'all 0.18s',
+        background: isDark ? 'rgba(255,255,255,0.025)' : '#fff',
+        '&:active': { transform: 'scale(0.98)', opacity: 0.9 },
       }}
     >
-      <CardActionArea onClick={onClick} sx={{ p: 1.5 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="subtitle2" fontWeight={900} fontSize={14} gutterBottom>
-              {stock.symbol}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" display="block" noWrap sx={{ maxWidth: '180px', fontSize: 11 }}>
+      {/* coloured left border = signal */}
+      <Box
+        sx={{
+          position: 'absolute', left: 0, top: 0, bottom: 0, width: 3,
+          bgcolor: isBuy ? 'success.main' : 'error.main',
+          borderRadius: '3px 0 0 3px',
+        }}
+      />
+
+      <CardActionArea onClick={onClick} sx={{ pl: 1.75, pr: 1.5, pt: 1.25, pb: 1 }}>
+        {/* Row 1: Symbol + Price */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.75 }}>
+          <Box sx={{ flex: 1, minWidth: 0, mr: 1 }}>
+            <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" mb={0.3}>
+              <Typography sx={{ fontWeight: 900, fontSize: 14 }}>{stock.symbol}</Typography>
+              <Chip label={stock.cap_category || 'Large'} size="small" variant="outlined"
+                sx={{ height: 16, fontSize: '0.6rem', fontWeight: 700 }} />
+              {stock.fo_eligible && (
+                <Chip label="F&O" size="small" color="primary" variant="outlined"
+                  sx={{ height: 16, fontSize: '0.6rem', fontWeight: 700 }} />
+              )}
+            </Stack>
+            <Typography sx={{ fontSize: 10.5, color: 'text.secondary', lineHeight: 1.3 }} noWrap>
               {stock.name}
             </Typography>
-            <Stack direction="row" spacing={0.5} mt={0.5}>
-              <Chip label={stock.cap_category || 'Large'} size="small" variant="outlined" sx={{ height: 18, fontSize: 9, fontWeight: 700 }} />
-              {stock.fo_eligible && <Chip label="F&O" size="small" color="primary" sx={{ height: 18, fontSize: 9, fontWeight: 700 }} />}
-            </Stack>
           </Box>
 
-          <Box textAlign="right">
-            <Typography variant="h6" fontWeight={900} fontSize={16}>
-              ₹{stock.current_price?.toFixed(2) || '—'}
+          <Box sx={{ textAlign: 'right', flexShrink: 0 }}>
+            <Typography sx={{ fontWeight: 900, fontSize: 15, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>
+              ₹{stock.current_price?.toFixed(2) ?? '—'}
             </Typography>
             {stock.change_pct != null && (
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', mt: 0.3 }}>
-                {stock.change_pct >= 0 ? <TrendingUp fontSize="small" sx={{ color: 'success.main' }} /> : <TrendingDown fontSize="small" sx={{ color: 'error.main' }} />}
-                <Typography variant="body2" color={stock.change_pct >= 0 ? 'success.main' : 'error.main'} fontWeight={700} ml={0.3}>
-                  {stock.change_pct >= 0 ? '+' : ''}{stock.change_pct.toFixed(2)}%
+              <Stack direction="row" spacing={0.3} alignItems="center" justifyContent="flex-end" mt={0.2}>
+                {up ? <TrendingUp sx={{ fontSize: 12, color: 'success.main' }} /> : <TrendingDown sx={{ fontSize: 12, color: 'error.main' }} />}
+                <Typography sx={{ fontSize: 11.5, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: up ? 'success.main' : 'error.main' }}>
+                  {up ? '+' : ''}{stock.change_pct.toFixed(2)}%
                 </Typography>
-              </Box>
+              </Stack>
             )}
           </Box>
         </Box>
 
+        {/* Row 2: Score bar + Signal */}
         <Grid container spacing={1} alignItems="center">
-          <Grid item xs={6}>
-            <Box>
-              <Typography variant="caption" color="text.secondary" display="block" fontSize={9}>
-                AI RATING (200)
-              </Typography>
-              <Typography variant="body2" fontWeight={900} color={isBuy ? 'success.main' : 'error.main'}>
-                {score200.toFixed(0)} <Chip label={grade} size="small" color={isBuy ? 'success' : 'error'} sx={{ height: 16, fontSize: 9, fontWeight: 900, ml: 0.5 }} />
-              </Typography>
-              <LinearProgress variant="determinate" value={Math.min(100, (score200 / 200) * 100)}
-                sx={{ height: 4, borderRadius: 1, mt: 0.5,
-                      '& .MuiLinearProgress-bar': { bgcolor: isBuy ? 'success.main' : 'error.main' } }} />
-            </Box>
+          <Grid item xs={7}>
+            <ScoreBar score200={score200} grade={grade} isBuy={isBuy} />
           </Grid>
-          <Grid item xs={6}>
-            {stock.signal && (
-              <Chip label={stock.signal} size="small" color={isBuy ? 'success' : 'error'} sx={{ fontWeight: 800, width: '100%' }} />
-            )}
+          <Grid item xs={5} sx={{ textAlign: 'right' }}>
+            {stock.signal && <SignalChip signal={stock.signal} />}
           </Grid>
         </Grid>
-
-        {/* Expandable Section */}
-        {(stock.rsi || stock.volume_ratio) && (
-          <Box sx={{ mt: 1 }}>
-            <Box
-              onClick={(e) => {
-                e.stopPropagation();
-                setExpanded(!expanded);
-              }}
-              sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', py: 0.5 }}
-            >
-              <Typography variant="caption" color="text.secondary" fontWeight={700} fontSize={10}>
-                {expanded ? 'Hide Details' : 'View Details'}
-              </Typography>
-              <IconButton size="small" sx={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0)', transition: '0.3s' }}>
-                <ExpandMore fontSize="small" />
-              </IconButton>
-            </Box>
-
-            <Collapse in={expanded}>
-              <Box sx={{ bgcolor: 'action.hover', borderRadius: 1, p: 1, mt: 1 }}>
-                <Grid container spacing={1}>
-                  {stock.rsi && (
-                    <Grid item xs={4}>
-                      <Typography variant="caption" color="text.secondary" display="block" fontSize={9}>RSI</Typography>
-                      <Typography variant="body2" fontWeight={700}>{stock.rsi.toFixed(1)}</Typography>
-                    </Grid>
-                  )}
-                  {stock.volume_ratio && (
-                    <Grid item xs={4}>
-                      <Typography variant="caption" color="text.secondary" display="block" fontSize={9}>Vol Ratio</Typography>
-                      <Typography variant="body2" fontWeight={700}>{stock.volume_ratio.toFixed(2)}x</Typography>
-                    </Grid>
-                  )}
-                  {stock.real_buy_pressure_pct && (
-                    <Grid item xs={4}>
-                      <Typography variant="caption" color="text.secondary" display="block" fontSize={9}>Buy Pressure</Typography>
-                      <Typography variant="body2" fontWeight={700} color="success.main">{stock.real_buy_pressure_pct}%</Typography>
-                    </Grid>
-                  )}
-                </Grid>
-              </Box>
-            </Collapse>
-          </Box>
-        )}
       </CardActionArea>
+
+      {/* Expandable details */}
+      {(stock.rsi || stock.volume_ratio || stock.real_buy_pressure_pct) && (
+        <>
+          <Divider />
+          <Box
+            onClick={e => { e.stopPropagation(); setExpanded(v => !v); }}
+            sx={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              py: 0.5, cursor: 'pointer', gap: 0.3,
+              '&:hover': { bgcolor: 'action.hover' },
+            }}
+          >
+            <Typography sx={{ fontSize: 10, color: 'text.secondary', fontWeight: 700 }}>
+              {expanded ? 'Hide' : 'Details'}
+            </Typography>
+            {expanded
+              ? <ExpandLess sx={{ fontSize: 14, color: 'text.disabled' }} />
+              : <ExpandMore sx={{ fontSize: 14, color: 'text.disabled' }} />
+            }
+          </Box>
+          <Collapse in={expanded}>
+            <Box
+              sx={{
+                px: 2, pb: 1.25,
+                background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.025)',
+              }}
+            >
+              <Grid container spacing={1}>
+                {stock.rsi != null && (
+                  <Grid item xs={4}>
+                    <Typography sx={{ fontSize: 9.5, color: 'text.secondary', fontWeight: 700 }}>RSI</Typography>
+                    <Typography sx={{ fontSize: 13, fontWeight: 800, color: stock.rsi > 70 ? 'error.main' : stock.rsi < 30 ? 'success.main' : 'text.primary' }}>
+                      {stock.rsi.toFixed(1)}
+                    </Typography>
+                  </Grid>
+                )}
+                {stock.volume_ratio != null && (
+                  <Grid item xs={4}>
+                    <Typography sx={{ fontSize: 9.5, color: 'text.secondary', fontWeight: 700 }}>Vol ×</Typography>
+                    <Typography sx={{ fontSize: 13, fontWeight: 800, color: stock.volume_ratio >= 2 ? 'warning.main' : 'text.primary' }}>
+                      {stock.volume_ratio.toFixed(2)}×
+                    </Typography>
+                  </Grid>
+                )}
+                {stock.real_buy_pressure_pct != null && (
+                  <Grid item xs={4}>
+                    <Typography sx={{ fontSize: 9.5, color: 'text.secondary', fontWeight: 700 }}>Buy Press</Typography>
+                    <Typography sx={{ fontSize: 13, fontWeight: 800, color: 'success.main' }}>
+                      {stock.real_buy_pressure_pct}%
+                    </Typography>
+                  </Grid>
+                )}
+              </Grid>
+            </Box>
+          </Collapse>
+        </>
+      )}
     </Card>
   );
 };
 
+// ─── Loading skeleton ─────────────────────────────────────────────────────────
+const LoadingCards = () => (
+  <Stack spacing={1.5}>
+    {[1, 2, 3].map(i => (
+      <Card key={i} elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', p: 2 }}>
+        <LinearProgress sx={{ borderRadius: 2, mb: 1 }} />
+        <LinearProgress sx={{ borderRadius: 2, width: '60%' }} />
+      </Card>
+    ))}
+  </Stack>
+);
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 export const StockTable: React.FC<Props> = ({ data, loading, compact }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const isTablet = useMediaQuery(theme.breakpoints.between('sm', 'md'));
+  const isDark = theme.palette.mode === 'dark';
   const navigate = useNavigate();
-  
+
   const [orderBy, setOrderBy] = useState<keyof StockResult>('buy_score');
   const [order, setOrder] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(isMobile ? 5 : 10);
+  const [rowsPerPage, setRowsPerPage] = useState(isMobile ? 6 : compact ? 5 : 10);
 
   const handleSort = (col: keyof StockResult) => {
-    if (col === orderBy) {
-      setOrder(order === 'asc' ? 'desc' : 'asc');
-    } else {
-      setOrderBy(col);
-      setOrder('desc');
-    }
-  };
-
-  const handleChangePage = (_: unknown, newPage: number) => {
-    setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
+    setOrder(col === orderBy && order === 'desc' ? 'asc' : 'desc');
+    setOrderBy(col);
   };
 
   const sorted = [...data].sort((a, b) => {
-    const aVal = (a as any)[orderBy] ?? 0;
-    const bVal = (b as any)[orderBy] ?? 0;
-    const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
-    return order === 'asc' ? cmp : -cmp;
+    const av = (a as any)[orderBy] ?? 0;
+    const bv = (b as any)[orderBy] ?? 0;
+    return order === 'asc' ? (av < bv ? -1 : av > bv ? 1 : 0) : (av > bv ? -1 : av < bv ? 1 : 0);
   });
 
-  const paginatedData = rowsPerPage > 0
+  const paginated = rowsPerPage > 0
     ? sorted.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
     : sorted;
 
-  const visibleColumns = compact || isMobile || isTablet
-    ? defaultColumns.filter(c => !c.hideOnMobile)
+  const visibleCols = (compact || isTablet)
+    ? defaultColumns.filter(c => !c.hideOnTablet)
     : defaultColumns;
 
-  // Mobile Card View
+  // ── Mobile view ──
   if (isMobile) {
     return (
       <Box>
-        {loading && (
-          <Typography variant="body2" color="text.secondary" fontWeight={600} textAlign="center" py={4}>
-            Loading stocks...
-          </Typography>
-        )}
-        {!loading && paginatedData.length === 0 && (
-          <Typography variant="body2" color="text.secondary" textAlign="center" py={4}>
-            No stocks found
-          </Typography>
+        {loading && <LoadingCards />}
+        {!loading && paginated.length === 0 && (
+          <Box sx={{ py: 5, textAlign: 'center' }}>
+            <Typography sx={{ color: 'text.secondary', fontWeight: 600 }}>No stocks found</Typography>
+          </Box>
         )}
         {!loading && (
-          <Stack spacing={1.5}>
-            {paginatedData.map((stock) => (
-              <StockCard key={stock.symbol} stock={stock} onClick={() => navigate(`/stock/${stock.symbol}`)} />
+          <Stack spacing={1.25}>
+            {paginated.map(stock => (
+              <StockCard
+                key={stock.symbol}
+                stock={stock}
+                onClick={() => navigate(`/stock/${stock.symbol}`)}
+              />
             ))}
           </Stack>
         )}
-
-        {/* Pagination */}
         <TablePagination
-          rowsPerPageOptions={[5, 10, 25]}
+          rowsPerPageOptions={[6, 12, 25]}
           component="div"
           count={sorted.length}
           rowsPerPage={rowsPerPage}
           page={page}
-          onPageChange={handleChangePage}
-          onRowsPerPageChange={handleChangeRowsPerPage}
-          sx={{ mt: 2, borderTop: '1px solid', borderColor: 'divider' }}
+          onPageChange={(_, p) => setPage(p)}
+          onRowsPerPageChange={e => { setRowsPerPage(+e.target.value); setPage(0); }}
+          sx={{ mt: 1, borderTop: '1px solid', borderColor: 'divider', '.MuiTablePagination-toolbar': { minHeight: 44 } }}
         />
       </Box>
     );
   }
 
-  // Desktop/Tablet Table View
+  // ── Desktop / Tablet table view ──
   return (
-    <Paper elevation={2} sx={{ overflow: 'hidden', borderRadius: 2 }}>
-      <TableContainer sx={{ maxHeight: 650, overflowX: 'auto' }}>
-        <Table stickyHeader size="small" sx={{ minWidth: isMobile ? 'auto' : 800 }}>
+    <Paper
+      elevation={0}
+      sx={{
+        overflow: 'hidden', borderRadius: 3,
+        border: '1px solid', borderColor: 'divider',
+        background: isDark ? 'rgba(255,255,255,0.02)' : '#fff',
+      }}
+    >
+      <TableContainer sx={{ maxHeight: 620 }}>
+        <Table stickyHeader size="small">
           <TableHead>
             <TableRow>
-              {visibleColumns.map((col) => (
-                <TableCell key={col.id} align={col.align || 'left'} sx={{ minWidth: col.minWidth, fontWeight: 800, bgcolor: 'background.default' }}>
-                  {col.id === 'action' || col.id === 'score_200' ? (
-                    col.label
-                  ) : (
+              {visibleCols.map(col => (
+                <TableCell
+                  key={col.id}
+                  align={col.align || 'left'}
+                  sx={{
+                    minWidth: col.minWidth,
+                    fontWeight: 800,
+                    fontSize: '0.68rem',
+                    letterSpacing: 0.8,
+                    textTransform: 'uppercase',
+                    bgcolor: isDark ? '#0b1120' : '#f4f7ff',
+                    borderBottom: '2px solid',
+                    borderColor: isDark ? 'rgba(0,176,255,0.2)' : 'rgba(21,101,192,0.15)',
+                  }}
+                >
+                  {col.id === 'action' || col.id === 'score_200' ? col.label : (
                     <TableSortLabel
                       active={orderBy === col.id}
                       direction={orderBy === col.id ? order : 'asc'}
-                      onClick={() => handleSort(col.id as keyof StockResult)}>
+                      onClick={() => handleSort(col.id as keyof StockResult)}
+                    >
                       {col.label}
                     </TableSortLabel>
                   )}
@@ -371,40 +442,48 @@ export const StockTable: React.FC<Props> = ({ data, loading, compact }) => {
               ))}
             </TableRow>
           </TableHead>
+
           <TableBody>
             {loading && (
               <TableRow>
-                <TableCell colSpan={visibleColumns.length} align="center" sx={{ py: 4 }}>
-                  <Typography variant="body2" color="text.secondary" fontWeight={600}>Scanning F&O stocks...</Typography>
+                <TableCell colSpan={visibleCols.length} sx={{ p: 0, border: 'none' }}>
+                  <LinearProgress />
                 </TableCell>
               </TableRow>
             )}
-            {!loading && paginatedData.length === 0 && (
+            {!loading && paginated.length === 0 && (
               <TableRow>
-                <TableCell colSpan={visibleColumns.length} align="center" sx={{ py: 4 }}>
-                  <Typography variant="body2" color="text.secondary">No stocks found</Typography>
+                <TableCell colSpan={visibleCols.length} align="center" sx={{ py: 5 }}>
+                  <Typography sx={{ color: 'text.secondary', fontWeight: 600 }}>No stocks found</Typography>
                 </TableCell>
               </TableRow>
             )}
-            {!loading && paginatedData.map((row) => (
-              <TableRow
-                hover
-                key={row.symbol}
-                onClick={() => navigate(`/stock/${row.symbol}`)}
-                sx={{
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  '&:hover': { bgcolor: 'action.hover', transform: 'translateX(2px)' },
-                  '&:active': { transform: 'scale(0.99)' },
-                }}
-              >
-                {visibleColumns.map((col) => (
-                  <TableCell key={col.id} align={col.align || 'left'}>
-                    {col.format ? col.format((row as any)[col.id], row) : ((row as any)[col.id]) || '—'}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
+            {!loading && paginated.map((row, idx) => {
+              const isBuy = row.trade_type !== 'sell' && row.signal !== 'SELL' && row.signal !== 'STRONG SELL';
+              return (
+                <TableRow
+                  hover
+                  key={row.symbol}
+                  onClick={() => navigate(`/stock/${row.symbol}`)}
+                  sx={{
+                    cursor: 'pointer',
+                    transition: 'background 0.15s',
+                    bgcolor: idx % 2 === 0
+                      ? 'transparent'
+                      : (isDark ? 'rgba(255,255,255,0.015)' : 'rgba(0,0,0,0.012)'),
+                    borderLeft: '3px solid',
+                    borderLeftColor: isBuy ? 'success.main' : 'error.main',
+                    '&:hover': { bgcolor: isDark ? 'rgba(0,176,255,0.05) !important' : 'rgba(21,101,192,0.04) !important' },
+                  }}
+                >
+                  {visibleCols.map(col => (
+                    <TableCell key={col.id} align={col.align || 'left'} sx={{ py: 1 }}>
+                      {col.format ? col.format((row as any)[col.id], row) : ((row as any)[col.id] ?? '—')}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </TableContainer>
@@ -415,8 +494,8 @@ export const StockTable: React.FC<Props> = ({ data, loading, compact }) => {
         count={sorted.length}
         rowsPerPage={rowsPerPage}
         page={page}
-        onPageChange={handleChangePage}
-        onRowsPerPageChange={handleChangeRowsPerPage}
+        onPageChange={(_, p) => setPage(p)}
+        onRowsPerPageChange={e => { setRowsPerPage(+e.target.value); setPage(0); }}
         sx={{ borderTop: '1px solid', borderColor: 'divider' }}
       />
     </Paper>

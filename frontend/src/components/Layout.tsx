@@ -5,14 +5,15 @@ import {
   List, ListItemButton, ListItemIcon, ListItemText,
   Divider, Badge, Chip, Tooltip, useTheme, useMediaQuery,
   TextField, Autocomplete, BottomNavigation, BottomNavigationAction,
-  Collapse, Paper, SwipeableDrawer,
+  Collapse, Paper, SwipeableDrawer, alpha,
 } from '@mui/material';
 import {
   Menu as MenuIcon, Dashboard as DashboardIcon, GridView, Star,
-  TrendingUp, TrendingDown, DateRange, CalendarMonth, Bookmarks, Settings, Notifications,
-  WbSunny, DarkMode, Analytics, Whatshot, Equalizer, Assessment,
-  History as HistoryIcon, Biotech, Science, Public, AccountTree, RocketLaunch,
-  ExpandLess, ExpandMore, Search, Home, BarChart, Explore, Person,
+  TrendingUp, TrendingDown, DateRange, CalendarMonth, Bookmarks, Settings,
+  Notifications, WbSunny, DarkMode, Analytics, Whatshot, Equalizer,
+  Assessment, History as HistoryIcon, Biotech, Science, Public,
+  AccountTree, RocketLaunch, ExpandLess, ExpandMore,
+  Home, BarChart, Search, Bolt,
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { fetchMarketOverview, fetchFutureStocks } from '../services/api';
@@ -22,8 +23,8 @@ import { useAppSelector, useAppDispatch } from '../store/hooks';
 import { markAllRead } from '../store';
 import type { StockResult } from '../utils/types';
 
-const DRAWER_W = 260;
-const BOTTOM_NAV_HEIGHT = 64;
+const DRAWER_W = 252;
+const BOTTOM_NAV_H = 60;
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -31,21 +32,131 @@ interface LayoutProps {
   onToggleTheme: () => void;
 }
 
+// Sidebar nav item with glow effect on active
+const NavItem: React.FC<{
+  label: string;
+  path: string;
+  icon: React.ReactNode;
+  badge?: string;
+  active: boolean;
+  onClick: () => void;
+  indent?: boolean;
+}> = ({ label, path: _path, icon, badge, active, onClick, indent }) => {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+
+  return (
+    <ListItemButton
+      selected={active}
+      onClick={onClick}
+      sx={{
+        borderRadius: '8px',
+        mx: 1,
+        my: 0.25,
+        pl: indent ? 3.5 : 1.5,
+        pr: 1,
+        py: 0.85,
+        minHeight: 38,
+        position: 'relative',
+        overflow: 'hidden',
+        transition: 'all 0.18s cubic-bezier(0.4,0,0.2,1)',
+        ...(active && {
+          background: isDark
+            ? 'linear-gradient(90deg, rgba(0,176,255,0.18) 0%, rgba(0,176,255,0.04) 100%)'
+            : 'linear-gradient(90deg, rgba(21,101,192,0.14) 0%, rgba(21,101,192,0.04) 100%)',
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            left: 0, top: '15%', bottom: '15%',
+            width: '3px',
+            borderRadius: '0 3px 3px 0',
+            background: isDark
+              ? 'linear-gradient(180deg, #00e5ff, #00b0ff)'
+              : 'linear-gradient(180deg, #5e92f3, #1565c0)',
+            boxShadow: isDark ? '0 0 8px rgba(0,176,255,0.8)' : 'none',
+          },
+        }),
+        '&:hover': {
+          background: isDark ? 'rgba(0,176,255,0.07)' : 'rgba(21,101,192,0.07)',
+          transform: 'translateX(3px)',
+        },
+        '&:active': { transform: 'translateX(1px) scale(0.98)' },
+      }}
+    >
+      <ListItemIcon
+        sx={{
+          minWidth: 32,
+          color: active
+            ? (isDark ? '#00b0ff' : 'primary.main')
+            : 'text.secondary',
+          transition: 'color 0.18s',
+          '& svg': { fontSize: 17 },
+        }}
+      >
+        {icon}
+      </ListItemIcon>
+      <ListItemText
+        primary={label}
+        primaryTypographyProps={{
+          fontSize: 13,
+          fontWeight: active ? 700 : 500,
+          color: active ? (isDark ? '#e2e8f8' : 'text.primary') : 'text.secondary',
+          lineHeight: 1.3,
+        }}
+      />
+      {badge && (
+        <Chip
+          label={badge}
+          size="small"
+          sx={{
+            height: 17, fontSize: '0.6rem', fontWeight: 900,
+            bgcolor: '#00c853', color: '#000', letterSpacing: 0.5,
+          }}
+        />
+      )}
+    </ListItemButton>
+  );
+};
+
+// Section label
+const SectionLabel: React.FC<{ label: string; collapsible?: boolean; open?: boolean; onToggle?: () => void }> = ({
+  label, collapsible, open, onToggle,
+}) => (
+  <Box
+    onClick={collapsible ? onToggle : undefined}
+    sx={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      px: 2, pt: 1.5, pb: 0.5,
+      cursor: collapsible ? 'pointer' : 'default',
+      userSelect: 'none',
+      '&:hover': collapsible ? { opacity: 0.8 } : {},
+    }}
+  >
+    <Typography
+      variant="overline"
+      sx={{ fontSize: '0.62rem', fontWeight: 800, color: 'text.disabled', letterSpacing: 1.2 }}
+    >
+      {label}
+    </Typography>
+    {collapsible && (
+      <Box sx={{ color: 'text.disabled', display: 'flex', alignItems: 'center' }}>
+        {open ? <ExpandLess sx={{ fontSize: 15 }} /> : <ExpandMore sx={{ fontSize: 15 }} />}
+      </Box>
+    )}
+  </Box>
+);
+
 export const Layout: React.FC<LayoutProps> = ({ children, themeMode, onToggleTheme }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const isTablet = useMediaQuery(theme.breakpoints.between('sm', 'md'));
+  const isDark = themeMode === 'dark';
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const location = useLocation();
 
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    trading: true,
-    analysis: false,
-    tools: false,
-  });
-  const [bottomNavValue, setBottomNavValue] = useState(0);
+  const [sections, setSections] = useState({ trading: true, analysis: false, tools: false });
+  const [bottomVal, setBottomVal] = useState(0);
   const unread = useAppSelector(s => s.notifications.unread);
 
   const { data: market } = useQuery({
@@ -61,283 +172,197 @@ export const Layout: React.FC<LayoutProps> = ({ children, themeMode, onToggleThe
   });
 
   const allStocks: StockResult[] = (stocksData?.stocks as any) || [];
+  const isActive = (p: string) => location.pathname === p;
 
   const nav = (path: string) => {
     navigate(path);
     if (isMobile) setMobileOpen(false);
   };
 
-  const isActive = (path: string) => location.pathname === path;
-
-  const toggleSection = (section: string) => {
-    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
-  };
-
-  const itemSx = (path: string) => ({
-    borderRadius: 2,
-    mx: 1.5,
-    my: 0.4,
-    py: isMobile ? 1.2 : 1,
-    pl: 2,
-    pr: 1.5,
-    bgcolor: isActive(path) ? 'primary.main' : 'transparent',
-    color: isActive(path) ? 'primary.contrastText' : 'inherit',
-    fontWeight: isActive(path) ? 700 : 500,
-    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-    '&:hover': {
-      bgcolor: isActive(path) ? 'primary.dark' : 'action.hover',
-      transform: 'translateX(4px)',
-    },
-    '&:active': {
-      transform: 'translateX(2px) scale(0.98)',
-    },
-  });
-
-  const sectionHeaderSx = {
-    px: 2.5,
-    py: 1,
-    cursor: 'pointer',
-    userSelect: 'none',
-    '&:hover': { bgcolor: 'action.hover' },
-    transition: 'all 0.2s',
-  };
+  const toggle = (s: keyof typeof sections) =>
+    setSections(prev => ({ ...prev, [s]: !prev[s] }));
 
   const menuSections = {
     overview: [
-      { label: 'Dashboard', path: '/', icon: <DashboardIcon fontSize="small" /> },
-      { label: 'IPO Assistant', path: '/ipo', icon: <RocketLaunch fontSize="small" />, badge: 'LIVE' },
-      { label: 'All Stocks', path: '/all-stocks', icon: <GridView fontSize="small" /> },
-      { label: 'F&O Stocks', path: '/future-stocks', icon: <Analytics fontSize="small" /> },
-      { label: 'Heat Map', path: '/heatmap', icon: <Whatshot fontSize="small" /> },
+      { label: 'Dashboard',     path: '/',             icon: <DashboardIcon /> },
+      { label: 'IPO Assistant', path: '/ipo',           icon: <RocketLaunch />, badge: 'LIVE' },
+      { label: 'All Stocks',    path: '/all-stocks',    icon: <GridView /> },
+      { label: 'F&O Stocks',    path: '/future-stocks', icon: <Analytics /> },
+      { label: 'Heat Map',      path: '/heatmap',       icon: <Whatshot /> },
     ],
     market: [
-      { label: 'Top Buyers', path: '/top-buyers', icon: <TrendingUp fontSize="small" /> },
-      { label: 'Top Sellers', path: '/top-sellers', icon: <TrendingDown fontSize="small" /> },
-      { label: 'Volume Best', path: '/volume-best', icon: <Equalizer fontSize="small" /> },
+      { label: 'Top Buyers',  path: '/top-buyers',  icon: <TrendingUp /> },
+      { label: 'Top Sellers', path: '/top-sellers', icon: <TrendingDown /> },
+      { label: 'Volume Best', path: '/volume-best', icon: <Equalizer /> },
     ],
     trading: [
-      { label: 'Intraday', path: '/top-buy', icon: <Star fontSize="small" /> },
-      { label: 'Swing', path: '/swing-buy', icon: <TrendingUp fontSize="small" /> },
-      { label: 'Weekly', path: '/weekly-buy', icon: <DateRange fontSize="small" /> },
-      { label: 'Monthly', path: '/monthly-buy', icon: <CalendarMonth fontSize="small" /> },
+      { label: 'Intraday', path: '/top-buy',     icon: <Bolt /> },
+      { label: 'Swing',    path: '/swing-buy',   icon: <TrendingUp /> },
+      { label: 'Weekly',   path: '/weekly-buy',  icon: <DateRange /> },
+      { label: 'Monthly',  path: '/monthly-buy', icon: <CalendarMonth /> },
     ],
     analysis: [
-      { label: 'Signal', path: '/signal', icon: <Assessment fontSize="small" /> },
-      { label: 'Indicators', path: '/indicators', icon: <Biotech fontSize="small" /> },
-      { label: 'History', path: '/history', icon: <HistoryIcon fontSize="small" /> },
-      { label: 'Backtest', path: '/backtest', icon: <Science fontSize="small" /> },
-      { label: 'Universe', path: '/universe', icon: <Public fontSize="small" /> },
+      { label: 'Signal',     path: '/signal',     icon: <Assessment /> },
+      { label: 'Indicators', path: '/indicators', icon: <Biotech /> },
+      { label: 'History',    path: '/history',    icon: <HistoryIcon /> },
+      { label: 'Backtest',   path: '/backtest',   icon: <Science /> },
+      { label: 'Universe',   path: '/universe',   icon: <Public /> },
     ],
     tools: [
-      { label: 'Scanner', path: '/scanner', icon: <AccountTree fontSize="small" /> },
-      { label: 'Watchlist', path: '/watchlist', icon: <Bookmarks fontSize="small" /> },
-      { label: 'Settings', path: '/settings', icon: <Settings fontSize="small" /> },
+      { label: 'Scanner',   path: '/scanner',   icon: <AccountTree /> },
+      { label: 'Watchlist', path: '/watchlist', icon: <Bookmarks /> },
+      { label: 'Settings',  path: '/settings',  icon: <Settings /> },
     ],
   };
 
   const DrawerContent = (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: 'background.paper' }}>
-      {/* Logo */}
-      <Box sx={{
-        p: 2.5,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 1.5,
-        borderBottom: 1,
-        borderColor: 'divider',
-        background: themeMode === 'dark'
-          ? 'linear-gradient(135deg, rgba(33, 150, 243, 0.1) 0%, rgba(156, 39, 176, 0.1) 100%)'
-          : 'linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%)',
-      }}>
-        <Box sx={{
-          width: 42,
-          height: 42,
-          borderRadius: 2,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'linear-gradient(135deg, #2196f3 0%, #9c27b0 100%)',
-          boxShadow: 3,
-        }}>
-          <Analytics sx={{ color: 'white', fontSize: 28 }} />
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* ── Logo ── */}
+      <Box
+        sx={{
+          px: 2, py: 1.75,
+          display: 'flex', alignItems: 'center', gap: 1.5,
+          borderBottom: '1px solid', borderColor: 'divider',
+          background: isDark
+            ? 'linear-gradient(135deg, rgba(0,176,255,0.08) 0%, rgba(213,0,249,0.05) 100%)'
+            : 'linear-gradient(135deg, #e3f2fd 0%, #ede7f6 100%)',
+        }}
+      >
+        <Box
+          sx={{
+            width: 36, height: 36, borderRadius: 2,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'linear-gradient(135deg, #00b0ff 0%, #d500f9 100%)',
+            boxShadow: isDark ? '0 0 16px rgba(0,176,255,0.4)' : '0 4px 12px rgba(0,176,255,0.3)',
+            flexShrink: 0,
+          }}
+        >
+          <Analytics sx={{ color: '#fff', fontSize: 20 }} />
         </Box>
         <Box>
-          <Typography variant="subtitle1" fontWeight={900} lineHeight={1.2} letterSpacing={0.3} fontSize={15}>
+          <Typography sx={{ fontWeight: 900, fontSize: 13.5, lineHeight: 1.2, letterSpacing: 0.5 }}>
             STOCK AI
           </Typography>
-          <Typography variant="caption" color="text.secondary" fontWeight={700} fontSize={10}>
-            ALL STOCKS • 4000+
+          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, fontSize: 9.5, letterSpacing: 0.5 }}>
+            NSE SCREENER • 4000+
           </Typography>
         </Box>
       </Box>
 
-      {/* Market Snapshot — Compact */}
-      {market && !isMobile && (
-        <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+      {/* ── Market Snapshot ── */}
+      {market && (
+        <Box sx={{ px: 1.5, py: 1.25, borderBottom: '1px solid', borderColor: 'divider' }}>
           <Paper
             elevation={0}
             sx={{
-              p: 1.5,
-              borderRadius: 2,
-              background: themeMode === 'dark'
-                ? 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)'
-                : 'linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)',
-              border: '1px solid',
-              borderColor: 'divider',
+              px: 1.5, py: 1.25, borderRadius: 2,
+              background: isDark
+                ? 'linear-gradient(135deg, rgba(0,176,255,0.06) 0%, rgba(0,0,0,0.2) 100%)'
+                : 'linear-gradient(135deg, #f0f8ff 0%, #fafbff 100%)',
+              border: '1px solid', borderColor: 'divider',
             }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.8 }}>
-              <Typography variant="caption" color="text.secondary" fontWeight={700} fontSize={10}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+              <Typography sx={{ fontSize: 9.5, fontWeight: 800, color: 'text.secondary', letterSpacing: 1 }}>
                 NIFTY 50
               </Typography>
               <Chip
-                label={market.market_trend?.toUpperCase()}
+                label={market.market_trend?.toUpperCase() ?? 'NEUTRAL'}
                 size="small"
                 color={market.market_trend === 'bullish' ? 'success' : market.market_trend === 'bearish' ? 'error' : 'warning'}
-                sx={{ height: 20, fontSize: 9, fontWeight: 800 }}
+                sx={{ height: 17, fontSize: '0.6rem', fontWeight: 900 }}
               />
             </Box>
-            <Typography variant="h6" fontWeight={800} fontSize={16} lineHeight={1.3}>
-              {market.nifty_price?.toLocaleString('en-IN', { maximumFractionDigits: 0 }) ?? '—'}
+            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+              <Typography sx={{ fontWeight: 900, fontSize: 15, lineHeight: 1 }}>
+                {market.nifty_price?.toLocaleString('en-IN', { maximumFractionDigits: 0 }) ?? '—'}
+              </Typography>
               {market.nifty_change_pct != null && (
                 <Typography
-                  component="span"
-                  variant="caption"
-                  color={market.nifty_change_pct >= 0 ? 'success.main' : 'error.main'}
-                  ml={1}
-                  fontWeight={700}
-                  fontSize={12}
+                  sx={{
+                    fontSize: 11, fontWeight: 800,
+                    color: market.nifty_change_pct >= 0 ? 'success.main' : 'error.main',
+                  }}
                 >
-                  {market.nifty_change_pct >= 0 ? '▲' : '▼'} {Math.abs(market.nifty_change_pct)?.toFixed(2)}%
+                  {market.nifty_change_pct >= 0 ? '▲' : '▼'} {Math.abs(market.nifty_change_pct).toFixed(2)}%
                 </Typography>
               )}
-            </Typography>
-            {market.vix && (
+            </Box>
+            {market.vix != null && (
               <Typography
-                variant="caption"
-                display="block"
-                color={market.vix_safe ? 'success.main' : 'error.main'}
-                mt={0.5}
-                fontWeight={700}
-                fontSize={10}
+                sx={{
+                  fontSize: 9.5, fontWeight: 700, mt: 0.5,
+                  color: market.vix_safe ? 'success.main' : 'error.main',
+                }}
               >
-                VIX: {market.vix?.toFixed(1)} • {market.vix_safe ? '🟢 Safe' : '🔴 High'}
+                VIX {market.vix.toFixed(1)} • {market.vix_safe ? '🟢 Safe' : '🔴 High Risk'}
               </Typography>
             )}
           </Paper>
         </Box>
       )}
 
-      {/* Session Status Panel */}
-      <Box sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: 'divider' }}>
+      {/* ── Session Status ── */}
+      <Box sx={{ px: 1.5, py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
         <GlobalMarketStatus variant="panel" />
       </Box>
 
-      {/* Navigation — Collapsible Sections */}
-      <List dense sx={{ flex: 1, overflowY: 'auto', py: 1 }}>
+      {/* ── Navigation ── */}
+      <List dense disablePadding sx={{ flex: 1, overflowY: 'auto', pt: 0.5, pb: 1 }}>
         {/* Overview */}
         {menuSections.overview.map(item => (
-          <ListItemButton key={item.path} sx={itemSx(item.path)} onClick={() => nav(item.path)}>
-            <ListItemIcon sx={{ minWidth: 36, color: 'inherit' }}>{item.icon}</ListItemIcon>
-            <ListItemText
-              primary={item.label}
-              primaryTypographyProps={{ fontSize: 13.5, fontWeight: isActive(item.path) ? 700 : 600 }}
-            />
-            {item.badge && (
-              <Chip
-                label={item.badge}
-                size="small"
-                sx={{
-                  height: 20,
-                  fontSize: 9,
-                  fontWeight: 900,
-                  bgcolor: '#00c853',
-                  color: 'white',
-                  letterSpacing: 0.5,
-                }}
-              />
-            )}
-          </ListItemButton>
+          <NavItem key={item.path} {...item} active={isActive(item.path)} onClick={() => nav(item.path)} />
         ))}
 
-        <Divider sx={{ my: 1, mx: 2 }} />
+        <Box sx={{ my: 0.75, mx: 1.5 }}><Divider /></Box>
 
         {/* Market Data */}
-        <Typography variant="caption" color="text.secondary" fontWeight={700} sx={{ px: 2.5, py: 1, display: 'block', fontSize: 11 }}>
-          MARKET DATA
-        </Typography>
+        <SectionLabel label="Market Data" />
         {menuSections.market.map(item => (
-          <ListItemButton key={item.path} sx={itemSx(item.path)} onClick={() => nav(item.path)}>
-            <ListItemIcon sx={{ minWidth: 36, color: 'inherit' }}>{item.icon}</ListItemIcon>
-            <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 13.5, fontWeight: isActive(item.path) ? 700 : 600 }} />
-          </ListItemButton>
+          <NavItem key={item.path} {...item} active={isActive(item.path)} onClick={() => nav(item.path)} />
         ))}
 
-        <Divider sx={{ my: 1, mx: 2 }} />
+        <Box sx={{ my: 0.75, mx: 1.5 }}><Divider /></Box>
 
-        {/* Trading Screens — Collapsible */}
-        <Box onClick={() => toggleSection('trading')} sx={sectionHeaderSx}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Typography variant="caption" color="text.secondary" fontWeight={700} fontSize={11}>
-              TRADING SCREENS
-            </Typography>
-            <IconButton size="small">{expandedSections.trading ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />}</IconButton>
-          </Box>
-        </Box>
-        <Collapse in={expandedSections.trading}>
+        {/* Trading Screens */}
+        <SectionLabel label="Trading Screens" collapsible open={sections.trading} onToggle={() => toggle('trading')} />
+        <Collapse in={sections.trading}>
           {menuSections.trading.map(item => (
-            <ListItemButton key={item.path} sx={itemSx(item.path)} onClick={() => nav(item.path)}>
-              <ListItemIcon sx={{ minWidth: 36, color: 'inherit' }}>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 13.5, fontWeight: isActive(item.path) ? 700 : 600 }} />
-            </ListItemButton>
+            <NavItem key={item.path} {...item} active={isActive(item.path)} onClick={() => nav(item.path)} indent />
           ))}
         </Collapse>
 
-        <Divider sx={{ my: 1, mx: 2 }} />
+        <Box sx={{ my: 0.75, mx: 1.5 }}><Divider /></Box>
 
-        {/* Analysis — Collapsible */}
-        <Box onClick={() => toggleSection('analysis')} sx={sectionHeaderSx}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Typography variant="caption" color="text.secondary" fontWeight={700} fontSize={11}>
-              ANALYSIS
-            </Typography>
-            <IconButton size="small">{expandedSections.analysis ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />}</IconButton>
-          </Box>
-        </Box>
-        <Collapse in={expandedSections.analysis}>
+        {/* Analysis */}
+        <SectionLabel label="Analysis" collapsible open={sections.analysis} onToggle={() => toggle('analysis')} />
+        <Collapse in={sections.analysis}>
           {menuSections.analysis.map(item => (
-            <ListItemButton key={item.path} sx={itemSx(item.path)} onClick={() => nav(item.path)}>
-              <ListItemIcon sx={{ minWidth: 36, color: 'inherit' }}>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 13.5, fontWeight: isActive(item.path) ? 700 : 600 }} />
-            </ListItemButton>
+            <NavItem key={item.path} {...item} active={isActive(item.path)} onClick={() => nav(item.path)} indent />
           ))}
         </Collapse>
 
-        <Divider sx={{ my: 1, mx: 2 }} />
+        <Box sx={{ my: 0.75, mx: 1.5 }}><Divider /></Box>
 
-        {/* Tools — Collapsible */}
-        <Box onClick={() => toggleSection('tools')} sx={sectionHeaderSx}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Typography variant="caption" color="text.secondary" fontWeight={700} fontSize={11}>
-              TOOLS
-            </Typography>
-            <IconButton size="small">{expandedSections.tools ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />}</IconButton>
-          </Box>
-        </Box>
-        <Collapse in={expandedSections.tools}>
+        {/* Tools */}
+        <SectionLabel label="Tools" collapsible open={sections.tools} onToggle={() => toggle('tools')} />
+        <Collapse in={sections.tools}>
           {menuSections.tools.map(item => (
-            <ListItemButton key={item.path} sx={itemSx(item.path)} onClick={() => nav(item.path)}>
-              <ListItemIcon sx={{ minWidth: 36, color: 'inherit' }}>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 13.5, fontWeight: isActive(item.path) ? 700 : 600 }} />
-            </ListItemButton>
+            <NavItem key={item.path} {...item} active={isActive(item.path)} onClick={() => nav(item.path)} indent />
           ))}
         </Collapse>
       </List>
 
-      <Divider />
-      <Box sx={{ p: 1.5, textAlign: 'center', borderTop: 1, borderColor: 'divider' }}>
-        <Typography variant="caption" color="text.secondary" fontWeight={700} fontSize={10}>
-          v3.0 • Institutional Engine
+      {/* ── Footer ── */}
+      <Box
+        sx={{
+          px: 2, py: 1, textAlign: 'center',
+          borderTop: '1px solid', borderColor: 'divider',
+          background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)',
+        }}
+      >
+        <Typography sx={{ fontSize: 9.5, color: 'text.disabled', fontWeight: 700, letterSpacing: 0.5 }}>
+          v3.0 • INSTITUTIONAL ENGINE
         </Typography>
       </Box>
     </Box>
@@ -345,138 +370,166 @@ export const Layout: React.FC<LayoutProps> = ({ children, themeMode, onToggleThe
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
-      {/* Top AppBar */}
+
+      {/* ── AppBar ── */}
       <AppBar
         position="fixed"
         elevation={0}
         sx={{
           zIndex: theme.zIndex.drawer + 1,
-          borderBottom: 1,
-          borderColor: 'divider',
-          bgcolor: 'background.paper',
-          color: 'text.primary',
+          bgcolor: isDark ? 'rgba(11,17,32,0.85)' : 'rgba(255,255,255,0.88)',
           backdropFilter: 'blur(20px)',
-          backgroundColor: themeMode === 'dark' ? 'rgba(15, 22, 41, 0.8)' : 'rgba(255, 255, 255, 0.8)',
+          color: 'text.primary',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
         }}
       >
-        <Toolbar variant="dense" sx={{ minHeight: { xs: 56, sm: 64 }, px: { xs: 1, sm: 2 } }}>
-          <IconButton edge="start" onClick={() => setMobileOpen(!mobileOpen)} sx={{ mr: { xs: 0.5, sm: 2 }, display: { md: 'none' } }}>
-            <MenuIcon />
+        <Toolbar variant="dense" sx={{ minHeight: { xs: 54, sm: 60 }, px: { xs: 1, sm: 2 }, gap: 1 }}>
+
+          {/* Hamburger (mobile) */}
+          <IconButton
+            edge="start"
+            onClick={() => setMobileOpen(!mobileOpen)}
+            sx={{ display: { md: 'none' }, mr: 0.5 }}
+            size="small"
+          >
+            <MenuIcon fontSize="small" />
           </IconButton>
 
-          {/* Logo + Title (desktop/tablet) */}
-          <Box sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 1, mr: 2 }}>
-            <Analytics sx={{ color: 'primary.main', fontSize: 28 }} />
-            <Typography variant="h6" fontWeight={900} sx={{ fontSize: { sm: 14, md: 16 }, letterSpacing: 0.5 }}>
-              STOCK AI SCREENER
-            </Typography>
-            <Chip label="4000+ STOCKS" size="small" color="primary" sx={{ height: 22, fontSize: 10, fontWeight: 800 }} />
-          </Box>
-
-          {/* Mobile logo */}
-          <Box sx={{ display: { xs: 'flex', sm: 'none' }, alignItems: 'center', gap: 0.5, mr: 1 }}>
-            <Analytics sx={{ color: 'primary.main', fontSize: 24 }} />
-            <Typography variant="subtitle2" fontWeight={900} fontSize={13}>
+          {/* Brand (desktop) */}
+          <Box sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 1, mr: 2, flexShrink: 0 }}>
+            <Box
+              sx={{
+                width: 28, height: 28, borderRadius: 1.5,
+                background: 'linear-gradient(135deg, #00b0ff 0%, #d500f9 100%)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: isDark ? '0 0 10px rgba(0,176,255,0.4)' : '0 2px 8px rgba(0,176,255,0.3)',
+              }}
+            >
+              <Analytics sx={{ color: '#fff', fontSize: 16 }} />
+            </Box>
+            <Typography sx={{ fontWeight: 900, fontSize: 14, letterSpacing: 0.5 }}>
               STOCK AI
             </Typography>
+            <Chip
+              label="NSE"
+              size="small"
+              color="primary"
+              sx={{ height: 18, fontSize: '0.6rem', fontWeight: 900 }}
+            />
+          </Box>
+
+          {/* Brand (mobile) */}
+          <Box sx={{ display: { xs: 'flex', sm: 'none' }, alignItems: 'center', gap: 0.75 }}>
+            <Analytics sx={{ color: 'primary.main', fontSize: 20 }} />
+            <Typography sx={{ fontWeight: 900, fontSize: 13 }}>STOCK AI</Typography>
           </Box>
 
           <Box sx={{ flexGrow: 1 }} />
 
-          {/* Search Bar */}
+          {/* Search */}
           <Autocomplete
             size="small"
             options={allStocks}
-            getOptionLabel={option => `${option.symbol} - ${option.name}`}
-            onChange={(_, value) => {
-              if (value) navigate(`/stock/${value.symbol}`);
-            }}
-            sx={{ width: { xs: 140, sm: 200, md: 280, lg: 350 }, mr: { xs: 0.5, sm: 2 } }}
+            getOptionLabel={o => `${o.symbol} - ${o.name}`}
+            onChange={(_, v) => { if (v) navigate(`/stock/${v.symbol}`); }}
+            sx={{ width: { xs: 130, sm: 190, md: 260, lg: 320 }, mr: { xs: 0.5, sm: 1.5 } }}
             renderInput={params => (
               <TextField
                 {...params}
-                placeholder="🔍 Search..."
-                variant="outlined"
+                placeholder="Search symbol…"
                 size="small"
                 InputProps={{
                   ...params.InputProps,
-                  style: { fontSize: { xs: 12, sm: 13 }, height: 36 },
+                  startAdornment: <Search sx={{ fontSize: 16, color: 'text.disabled', mr: 0.5 }} />,
+                  sx: { fontSize: 13, height: 34, borderRadius: 2 },
                 }}
               />
             )}
           />
 
-          {/* Market Status (desktop only) */}
+          {/* Nifty ticker (lg+) */}
           {market && (
-            <Box sx={{ display: { xs: 'none', lg: 'flex' }, alignItems: 'center', gap: 2, mr: 2 }}>
-              <Box textAlign="right">
-                <Typography variant="caption" color="text.secondary" display="block" lineHeight={1} fontSize={10}>
+            <Box
+              sx={{
+                display: { xs: 'none', lg: 'flex' }, alignItems: 'center', gap: 1.5, mr: 1.5,
+                px: 1.5, py: 0.5, borderRadius: 2,
+                bgcolor: isDark ? 'rgba(0,176,255,0.06)' : 'rgba(21,101,192,0.05)',
+                border: '1px solid', borderColor: 'divider',
+              }}
+            >
+              <Box>
+                <Typography sx={{ fontSize: 9, fontWeight: 800, color: 'text.secondary', letterSpacing: 0.8, lineHeight: 1 }}>
                   NIFTY 50
                 </Typography>
-                <Typography variant="body2" fontWeight={800} fontSize={14}>
+                <Typography sx={{ fontWeight: 900, fontSize: 13, lineHeight: 1.3 }}>
                   {market.nifty_price?.toLocaleString('en-IN', { maximumFractionDigits: 0 }) ?? '—'}
                 </Typography>
               </Box>
-              {market.vix && (
+              {market.nifty_change_pct != null && (
+                <Typography
+                  sx={{
+                    fontSize: 12, fontWeight: 800,
+                    color: market.nifty_change_pct >= 0 ? 'success.main' : 'error.main',
+                  }}
+                >
+                  {market.nifty_change_pct >= 0 ? '▲' : '▼'} {Math.abs(market.nifty_change_pct).toFixed(2)}%
+                </Typography>
+              )}
+              {market.vix != null && (
                 <Chip
                   label={`VIX ${market.vix.toFixed(1)}`}
                   size="small"
                   color={market.vix_safe ? 'success' : 'error'}
-                  sx={{ fontWeight: 700, height: 24 }}
+                  sx={{ height: 20, fontSize: '0.62rem', fontWeight: 800 }}
                 />
               )}
             </Box>
           )}
 
-          {/* Session Badge */}
-          <Box sx={{ mx: { xs: 0.5, sm: 1 } }}>
-            <GlobalMarketStatus variant="compact" />
-          </Box>
+          {/* Session badge */}
+          <GlobalMarketStatus variant="compact" />
 
           {/* Notifications */}
           <Tooltip title="Notifications">
             <IconButton
-              size={isMobile ? 'small' : 'medium'}
-              onClick={() => {
-                navigate('/watchlist');
-                dispatch(markAllRead());
-              }}
+              size="small"
+              onClick={() => { navigate('/watchlist'); dispatch(markAllRead()); }}
+              sx={{ mx: 0.25 }}
             >
               <Badge badgeContent={unread} color="error">
-                <Notifications fontSize="small" />
+                <Notifications sx={{ fontSize: 19 }} />
               </Badge>
             </IconButton>
           </Tooltip>
 
-          {/* Theme Toggle */}
-          <Tooltip title={themeMode === 'dark' ? 'Light mode' : 'Dark mode'}>
-            <IconButton size={isMobile ? 'small' : 'medium'} onClick={onToggleTheme}>
-              {themeMode === 'dark' ? <WbSunny fontSize="small" /> : <DarkMode fontSize="small" />}
+          {/* Theme toggle */}
+          <Tooltip title={isDark ? 'Light mode' : 'Dark mode'}>
+            <IconButton size="small" onClick={onToggleTheme}>
+              {isDark ? <WbSunny sx={{ fontSize: 19 }} /> : <DarkMode sx={{ fontSize: 19 }} />}
             </IconButton>
           </Tooltip>
         </Toolbar>
       </AppBar>
 
-      {/* Desktop Drawer (Permanent) */}
+      {/* ── Desktop Permanent Drawer ── */}
       <Drawer
         variant="permanent"
         sx={{
-          width: DRAWER_W,
-          flexShrink: 0,
+          width: DRAWER_W, flexShrink: 0,
           display: { xs: 'none', md: 'block' },
           '& .MuiDrawer-paper': {
-            width: DRAWER_W,
-            boxSizing: 'border-box',
-            mt: '64px',
-            borderRight: 1,
-            borderColor: 'divider',
+            width: DRAWER_W, boxSizing: 'border-box',
+            mt: '60px',
+            borderRight: '1px solid', borderColor: 'divider',
+            bgcolor: isDark ? '#0b1120' : '#fff',
           },
         }}
       >
         {DrawerContent}
       </Drawer>
 
-      {/* Mobile Drawer (Swipeable) */}
+      {/* ── Mobile Swipeable Drawer ── */}
       <SwipeableDrawer
         variant="temporary"
         open={mobileOpen}
@@ -490,14 +543,13 @@ export const Layout: React.FC<LayoutProps> = ({ children, themeMode, onToggleThe
         {DrawerContent}
       </SwipeableDrawer>
 
-      {/* Main Content */}
+      {/* ── Main Content ── */}
       <Box
         component="main"
         sx={{
           flexGrow: 1,
-          mt: { xs: '56px', sm: '64px' },
-          mb: { xs: `${BOTTOM_NAV_HEIGHT}px`, md: 0 },
-          ml: { xs: 0, md: 0 },
+          mt: { xs: '54px', sm: '60px' },
+          mb: { xs: `${BOTTOM_NAV_H}px`, md: 0 },
           width: '100%',
           minWidth: 0,
           maxWidth: '100%',
@@ -505,42 +557,37 @@ export const Layout: React.FC<LayoutProps> = ({ children, themeMode, onToggleThe
           overflowX: 'hidden',
         }}
       >
-        {/* Sticky Market Status Bar */}
         <MarketStatusBar />
-
-        {/* Page Content */}
-        <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>{children}</Box>
+        <Box sx={{ p: { xs: 1.25, sm: 2, md: 2.5 } }}>{children}</Box>
       </Box>
 
-      {/* Bottom Navigation (Mobile Only) */}
+      {/* ── Bottom Nav (mobile) ── */}
       {isMobile && (
         <Paper
-          sx={{
-            position: 'fixed',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            zIndex: theme.zIndex.appBar,
-            borderTop: 1,
-            borderColor: 'divider',
-            height: BOTTOM_NAV_HEIGHT,
-          }}
           elevation={8}
+          sx={{
+            position: 'fixed', bottom: 0, left: 0, right: 0,
+            zIndex: theme.zIndex.appBar,
+            borderTop: '1px solid', borderColor: 'divider',
+            height: BOTTOM_NAV_H,
+            bgcolor: isDark ? 'rgba(11,17,32,0.95)' : 'rgba(255,255,255,0.95)',
+            backdropFilter: 'blur(16px)',
+          }}
         >
           <BottomNavigation
-            value={bottomNavValue}
-            onChange={(_, newValue) => {
-              setBottomNavValue(newValue);
+            value={bottomVal}
+            onChange={(_, v) => {
+              setBottomVal(v);
               const paths = ['/', '/all-stocks', '/scanner', '/watchlist'];
-              if (paths[newValue]) navigate(paths[newValue]);
+              if (paths[v]) navigate(paths[v]);
             }}
             showLabels
-            sx={{ height: '100%', bgcolor: 'background.paper' }}
+            sx={{ height: '100%', bgcolor: 'transparent' }}
           >
-            <BottomNavigationAction label="Home" icon={<Home />} />
-            <BottomNavigationAction label="Stocks" icon={<BarChart />} />
-            <BottomNavigationAction label="Scan" icon={<Search />} />
-            <BottomNavigationAction label="Watch" icon={<Bookmarks />} />
+            <BottomNavigationAction label="Home"   icon={<Home sx={{ fontSize: 22 }} />} sx={{ fontSize: '0.65rem' }} />
+            <BottomNavigationAction label="Stocks" icon={<BarChart sx={{ fontSize: 22 }} />} sx={{ fontSize: '0.65rem' }} />
+            <BottomNavigationAction label="Scan"   icon={<Search sx={{ fontSize: 22 }} />} sx={{ fontSize: '0.65rem' }} />
+            <BottomNavigationAction label="Watch"  icon={<Bookmarks sx={{ fontSize: 22 }} />} sx={{ fontSize: '0.65rem' }} />
           </BottomNavigation>
         </Paper>
       )}
