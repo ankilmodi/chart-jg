@@ -65,15 +65,6 @@ REAL_BASE_PRICES = {
 }
 
 def _sanitize_df(ticker: str, df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
-    if df is None or df.empty:
-        return df
-    clean = ticker.upper().replace(".NS", "")
-    target = REAL_BASE_PRICES.get(clean) or REAL_BASE_PRICES.get(ticker.upper())
-    if target and target > 0:
-        curr = float(df.iloc[-1]["close"])
-        if abs(curr - target) > (target * 0.10):
-            df = df.copy()
-            df.iloc[-1, df.columns.get_loc("close")] = target
     return df
 
 def fetch_daily(ticker: str, period: str = "200d", force: bool = False) -> Optional[pd.DataFrame]:
