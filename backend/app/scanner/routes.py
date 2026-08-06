@@ -102,12 +102,15 @@ def _filter_and_paginate(
     total_count = len(results)
     start_idx = (page - 1) * limit
     paginated = results[start_idx : start_idx + limit]
+
+    from app.scanner.market_data import _get_data_source_label
     return {
-        "stocks": [r.dict() for r in paginated],
-        "total":  total_count,
-        "page":   page,
-        "limit":  limit,
-        "timestamp": _now(),
+        "stocks":      [r.dict() for r in paginated],
+        "total":       total_count,
+        "page":        page,
+        "limit":       limit,
+        "data_source": _get_data_source_label(),
+        "timestamp":   _now(),
     }
 
 
@@ -246,13 +249,15 @@ async def get_all_stocks(
             "confidence_score": 0,
         }
 
+    from app.scanner.market_data import _get_data_source_label
     return {
-        "stocks":    [_to_dict(r) for r in page_items],
-        "total":     total,
-        "page":      page,
-        "limit":     limit,
-        "pages":     (total + limit - 1) // limit,
-        "timestamp": _now(),
+        "stocks":      [_to_dict(r) for r in page_items],
+        "total":       total,
+        "page":        page,
+        "limit":       limit,
+        "pages":       (total + limit - 1) // limit,
+        "data_source": _get_data_source_label(),
+        "timestamp":   _now(),
     }
 
 

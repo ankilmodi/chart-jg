@@ -1,6 +1,14 @@
 """
 Market Data Service – fetches live data from Yahoo Finance for all NSE F&O stocks.
 Includes batching, caching, and fallback handling.
+
+Offline / EOD mode:
+  When market is CLOSED (after 3:30 PM IST, weekends, holidays) the data
+  source switches automatically to EOD (last close) mode:
+    - CACHE_TTL is extended to 3600 s (1 hour) to avoid hammering Yahoo.
+    - LTP is taken from the latest daily close row (not from fast_info / live tick).
+    - All responses include  data_source = "offline_eod"  so the UI can show
+      an "EOD Price" badge instead of a live indicator.
 """
 import logging
 import time
@@ -13,17 +21,50 @@ import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
+# ── Session-aware cache TTL ────────────────────────────────────────────────
+CACHE_TTL_LIVE    = 60      # 1 minute during market hours
+CACHE_TTL_OFFLINE = 3600    # 1 hour outside market hours (EOD data changes rarely)
+CACHE_TTL = CACHE_TTL_OFFLINE   # default; updated at runtime via _get_cache_ttl()
+
+
+def _is_market_open() -> bool:
+    """Return True only when NSE is live (09:15–15:30 IST, trading day)."""
+    try:
+        from app.services.market_session import market_session
+        return market_session.is_market_open()
+    except Exception:
+        # Lightweight fallback – avoids circular imports
+        import pytz
+        from datetime import time as _time
+        now = datetime.now(pytz.timezone("Asia/Kolkata"))
+        if now.weekday() >= 5:
+            return False
+        t = now.time().replace(tzinfo=None)
+        return _time(9, 15) <= t <= _time(15, 30)
+
+
+def _get_cache_ttl() -> int:
+    """Return session-appropriate TTL: short when live, long when offline."""
+    return CACHE_TTL_LIVE if _is_market_open() else CACHE_TTL_OFFLINE
+
+
+def _get_data_source_label() -> str:
+    """Return 'live' when market is open, 'offline_eod' when closed."""
+    return "live" if _is_market_open() else "offline_eod"
+
+
 # ── In-memory cache ────────────────────────────────────────────────────────
 _cache: Dict[str, Any]    = {}
 _cache_ts: Dict[str, float] = {}
-CACHE_TTL = 300   # 5 minutes
 
 # ── Last-known prices (survive cache expiry when Yahoo is down) ────────────
 _last_known: Dict[str, Dict[str, Any]] = {}
 
 
-def _cached(key: str, ttl: int = CACHE_TTL) -> Optional[Any]:
-    if key in _cache and (time.time() - _cache_ts.get(key, 0)) < ttl:
+def _cached(key: str, ttl: Optional[int] = None) -> Optional[Any]:
+    """Return cached value if still within TTL. Uses session-aware TTL if none given."""
+    effective_ttl = ttl if ttl is not None else _get_cache_ttl()
+    if key in _cache and (time.time() - _cache_ts.get(key, 0)) < effective_ttl:
         return _cache[key]
     return None
 
@@ -68,7 +109,19 @@ def _sanitize_df(ticker: str, df: Optional[pd.DataFrame]) -> Optional[pd.DataFra
     return df
 
 def fetch_daily(ticker: str, period: str = "200d", force: bool = False) -> Optional[pd.DataFrame]:
-    """Fetch daily OHLCV for a single ticker. Returns lowercase-column DataFrame."""
+    """
+    Fetch daily OHLCV for a single ticker. Returns lowercase-column DataFrame.
+
+    Offline / EOD mode:
+      When market is CLOSED the function:
+        1. Uses a 1-hour cache TTL (vs 60 s when live).
+        2. Does NOT override the last-bar close with regularMarketPrice
+           (which Yahoo sometimes returns as a stale intraday tick).
+           Instead the latest close row IS the EOD price.
+        3. Stores 'data_source' = 'offline_eod' as a DataFrame attribute
+           so callers can label responses appropriately.
+    """
+    market_live = _is_market_open()
     cache_key = f"daily_{ticker}_{period}"
     if not force:
         cached = _cached(cache_key)
@@ -112,9 +165,17 @@ def fetch_daily(ticker: str, period: str = "200d", force: bool = False) -> Optio
                         }, index=pd.to_datetime(timestamps[:min_len], unit='s'))
                         df = df.dropna(subset=['close'])
                         if not df.empty:
-                            if reg_price and float(reg_price) > 0:
+                            # ── Offline/EOD mode: use last close row as LTP ──────
+                            # When market is LIVE: overwrite last close with the
+                            # real-time regularMarketPrice tick from Yahoo.
+                            # When market is CLOSED: keep the OHLCV close as-is
+                            # (it is the official EOD price; reg_price may lag).
+                            if market_live and reg_price and float(reg_price) > 0:
                                 df.iloc[-1, df.columns.get_loc('close')] = float(reg_price)
+
                             df = _sanitize_df(ticker, df)
+                            # Attach data_source metadata so callers can label responses
+                            df.attrs['data_source'] = 'live' if market_live else 'offline_eod'
                             _set_cache(cache_key, df)
                             _last_known_df[ticker] = df
                             return df
@@ -135,6 +196,7 @@ def fetch_daily(ticker: str, period: str = "200d", force: bool = False) -> Optio
             df = df.dropna(subset=["close"])
             if not df.empty:
                 df = _sanitize_df(ticker, df)
+                df.attrs['data_source'] = 'live' if market_live else 'offline_eod'
                 _set_cache(cache_key, df)
                 _last_known_df[ticker] = df
                 return df
@@ -221,7 +283,9 @@ def fetch_live_index(ticker: str) -> Optional[Dict[str, Any]]:
 
 def fetch_vix() -> Optional[float]:
     cache_key = "vix"
-    cached = _cached(cache_key, ttl=60)
+    # Live: refresh VIX every 60 s. Offline: cache for 1 hour.
+    vix_ttl = CACHE_TTL_LIVE if _is_market_open() else CACHE_TTL_OFFLINE
+    cached = _cached(cache_key, ttl=vix_ttl)
     if cached is not None:
         return cached
 
@@ -249,21 +313,55 @@ def fetch_vix() -> Optional[float]:
 # ── Snapshot (latest quote) ────────────────────────────────────────────────
 
 def fetch_snapshot(ticker: str) -> Optional[Dict[str, Any]]:
+    """
+    Return the latest price snapshot for a ticker.
+
+    Offline / EOD mode (market closed):
+      Returns the last DAILY close as 'price', sourced from daily OHLCV data.
+      This is the correct EOD price after 3:30 PM / weekends / holidays.
+      data_source = 'offline_eod'.
+
+    Live mode (09:15–15:30 IST):
+      Uses fast_info / live index API for real-time LTP.
+      data_source = 'live'.
+    """
+    market_live = _is_market_open()
     cache_key = f"snap_{ticker}"
-    cached = _cached(cache_key, ttl=60)
+    # Use short TTL when live, long TTL when offline
+    snap_ttl = CACHE_TTL_LIVE if market_live else CACHE_TTL_OFFLINE
+    cached = _cached(cache_key, ttl=snap_ttl)
     if cached is not None:
         return cached
 
-    # Use live index fetcher for indices (^NSEI, ^NSEBANK, ^INDIAVIX)
+    # ── Index tickers ──────────────────────────────────────────────────────
     if ticker in ("^NSEI", "^NSEBANK", "^INDIAVIX"):
         live = fetch_live_index(ticker)
         if live:
+            live['data_source'] = 'live' if market_live else 'offline_eod'
             _set_cache(cache_key, live)
             _last_known[ticker] = live
             return live
 
+    # ── Offline / EOD mode: derive price from daily OHLCV ─────────────────
+    if not market_live:
+        # Use the daily data (last close = today's or last-trading-day's EOD price)
+        df = fetch_daily(ticker, period="5d")
+        if df is not None and not df.empty:
+            price = float(df['close'].iloc[-1])
+            prev  = float(df['close'].iloc[-2]) if len(df) >= 2 else price
+            chg_pct = round(((price - prev) / prev) * 100, 2) if prev else 0.0
+            snap = {
+                'price':       price,
+                'prev_close':  prev,
+                'change_pct':  chg_pct,
+                'data_source': 'offline_eod',
+            }
+            _set_cache(cache_key, snap)
+            _last_known[ticker] = snap
+            return snap
+
+    # ── Live mode: use fast_info for real-time tick ────────────────────────
     snap = None
-    # Try fast_info for individual stocks
     try:
         fi    = yf.Ticker(ticker).fast_info
         price = _fast_info_get(fi, "last_price", "lastPrice", "regularMarketPrice")
@@ -272,7 +370,12 @@ def fetch_snapshot(ticker: str) -> Optional[Dict[str, Any]]:
             if not prev or prev <= 0:
                 prev = price
             chg_pct = round(((price - prev) / prev) * 100, 2) if prev else 0
-            snap = {"price": price, "prev_close": prev, "change_pct": chg_pct}
+            snap = {
+                'price':       price,
+                'prev_close':  prev,
+                'change_pct':  chg_pct,
+                'data_source': 'live',
+            }
     except Exception as e:
         logger.debug("fetch_snapshot fast_info(%s) error: %s", ticker, e)
 

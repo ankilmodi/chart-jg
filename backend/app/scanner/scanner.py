@@ -20,6 +20,7 @@ from app.scanner.universe import get_full_universe, get_by_index, StockInfo
 from app.scanner.market_data import (
     fetch_daily, fetch_nifty_daily, fetch_banknifty_daily, fetch_vix,
     fetch_snapshot, batch_fetch_daily, clear_scanner_cache, estimate_oi_pattern,
+    _get_data_source_label,
 )
 from app.scanner.indicators import compute_all
 from app.scanner.scoring import (
@@ -83,21 +84,14 @@ def get_market_overview() -> MarketOverview:
     bn_price = bn_snap["price"]   if bn_snap else None
     bn_chg   = bn_snap["change_pct"] if bn_snap else None
 
-    from app.scanner.market_data import _last_known
-    # Use MarketSessionService for authoritative data_source
-    try:
-        from app.services.market_session import market_session
-        ms = market_session.get_market_status()
-        data_source = ms.data_source if price is None else "live"
-        if price is None and "^NSEI" in _last_known:
-            data_source = "last_known"
-    except Exception:
-        if price is not None:
-            data_source = "live"
-        elif "^NSEI" in _last_known:
-            data_source = "last_known"
-        else:
-            data_source = "unavailable"
+    from app.scanner.market_data import _last_known, _get_data_source_label
+    # Use snapshot's own data_source if available; otherwise derive from session
+    if snap and snap.get('data_source'):
+        data_source = snap['data_source']
+    elif price is None and "^NSEI" in _last_known:
+        data_source = "last_known"
+    else:
+        data_source = _get_data_source_label() if price is not None else "unavailable"
 
     ema20 = ema50 = ema200 = vwap_val = None
     above_ema20 = above_ema50 = above_ema200 = above_vwap = False
@@ -307,6 +301,7 @@ def _build_result(
         reasons=active_reasons,
         reject_reasons=active_rejects,
         scanned_at=_now_str(),
+        data_source=_get_data_source_label(),
     )
 
 

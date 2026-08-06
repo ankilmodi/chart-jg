@@ -20,6 +20,7 @@ class MarketData(BaseModel):
     change_pct: float
     timestamp: str
     last_updated: str
+    data_source: str = "live"
 
 
 class IndicatorValues(BaseModel):

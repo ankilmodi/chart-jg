@@ -31,17 +31,38 @@ TWELVEDATA_API_KEY = os.getenv("TWELVEDATA_API_KEY", "")
 # ---------------------------------------------------------------------------
 
 _cache: dict = {}
-CACHE_TTL = 60  # seconds
+CACHE_TTL = 60  # seconds (live)
+CACHE_TTL_OFFLINE = 3600  # 1 hour when market is closed
+
+
+def _get_data_source_label() -> str:
+    """Return 'live' when market is open, 'offline_eod' when closed."""
+    try:
+        from app.services.market_session import market_session
+        return "live" if market_session.is_market_open() else "offline_eod"
+    except Exception:
+        import pytz
+        from datetime import time as _time
+        now = datetime.now(pytz.timezone("Asia/Kolkata"))
+        if now.weekday() >= 5:
+            return "offline_eod"
+        t = now.time().replace(tzinfo=None)
+        return "live" if _time(9, 15) <= t <= _time(15, 30) else "offline_eod"
+
+
+def _get_cache_ttl() -> int:
+    return CACHE_TTL if _get_data_source_label() == "live" else CACHE_TTL_OFFLINE
 
 
 def _now_str() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
-def _cached(key: str):
+def _cached(key: str, ttl: int = None):
+    effective_ttl = ttl if ttl is not None else _get_cache_ttl()
     if key in _cache:
         value, ts = _cache[key]
-        if time.time() - ts < CACHE_TTL:
+        if time.time() - ts < effective_ttl:
             return value
     return None
 
@@ -377,6 +398,7 @@ def get_market_snapshot() -> Optional[dict]:
         "change_pct":   round(change_pct, 2),
         "timestamp":    _now_str(),
         "last_updated": _now_str(),
+        "data_source":  _get_data_source_label(),
     }
     _set_cache(cache_key, result)
     return result
