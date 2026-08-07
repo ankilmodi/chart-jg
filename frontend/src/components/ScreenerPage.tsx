@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import {
   Box, Typography, Stack, Chip, Alert, LinearProgress,
-  IconButton, Tooltip, ToggleButtonGroup, ToggleButton, TextField, InputAdornment, MenuItem, Select, FormControl, InputLabel
+  IconButton, Tooltip, ToggleButtonGroup, ToggleButton, TextField, InputAdornment, MenuItem, Select, FormControl, InputLabel,
+  Checkbox, FormControlLabel
 } from '@mui/material';
 import { Refresh, Download, Search, FilterList } from '@mui/icons-material';
+import { PageHeader } from './PageHeader';
 import { useQuery } from '@tanstack/react-query';
-import { StockTable } from './StockTable';
+import { StockTable, getSMCSignal, getActionVerdict } from './StockTable';
 import { exportCSV } from '../services/api';
 import type { StockResult, StocksResponse } from '../utils/types';
 import type { ScreenerParams } from '../services/api';
@@ -14,6 +16,19 @@ const SECTORS = [
   'ALL', 'Banking & Finance', 'IT & Tech', 'Energy & Power',
   'Auto & Auto Ancil', 'Pharma & Healthcare', 'FMCG', 'Metals & Mining',
   'Real Estate', 'Infrastructure', 'Telecom', 'Services', 'Capital Goods'
+];
+
+const SMC_SIGNALS = [
+  'ALL', 'Institutional Buy Flow', 'Institutional Selling', 'Bullish Breakout', 'Bearish Breakdown',
+  'Smart Money Accumulation', 'Smart Money Distribution', 'Order Block Support', 'Order Block Resistance', 'Retail Consolidation'
+];
+
+const VERDICTS = [
+  'ALL', 'BUY / ACCUMULATE', 'BUY', 'HOLD', 'WAIT', 'SELL', 'SELL / BOOK PROFIT', 'AVOID'
+];
+
+const RSI_RANGES = [
+  'ALL', 'Overbought (70+)', 'Bullish (60-69)', 'Neutral (40-59)', 'Oversold (<30)'
 ];
 
 interface Props {
@@ -26,11 +41,16 @@ interface Props {
 }
 
 export const ScreenerPage: React.FC<Props> = ({
-  title, subtitle, icon, queryKey, fetcher, refetchInterval = 300_000,
+  title, subtitle, icon, queryKey, fetcher, refetchInterval = 10000,
 }) => {
   const [tradeType, setTradeType] = useState<'buy' | 'sell'>('buy');
   const [capCategory, setCapCategory] = useState<string>('ALL');
   const [sectorFilter, setSectorFilter] = useState<string>('ALL');
+  const [rsiFilter, setRsiFilter] = useState<string>('ALL');
+  const [smcFilter, setSmcFilter] = useState<string>('ALL');
+  const [verdictFilter, setVerdictFilter] = useState<string>('ALL');
+  const [nifty50Filter, setNifty50Filter] = useState<boolean>(false);
+  const [highVolumeFilter, setHighVolumeFilter] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState<number>(0);
   const [rowsPerPage, setRowsPerPage] = useState<number>(25);
@@ -47,13 +67,39 @@ export const ScreenerPage: React.FC<Props> = ({
     refetchInterval,
   });
 
-  const stocks: StockResult[] = (data?.stocks as any) ?? [];
-  const totalCount: number = data?.total ?? stocks.length;
+  let stocks: StockResult[] = (data?.stocks as any) ?? [];
+
+  // Frontend filtering for new filters
+  if (highVolumeFilter) {
+    stocks = stocks.filter(s => (s.volume_ratio || 0) >= 2 || (s.volume || 0) > 1000000);
+  }
+  if (nifty50Filter) {
+    stocks = stocks.filter(s => s.index?.toUpperCase().includes('NIFTY 50'));
+  }
+  if (smcFilter !== 'ALL') {
+    stocks = stocks.filter(s => getSMCSignal(s) === smcFilter);
+  }
+  if (verdictFilter !== 'ALL') {
+    stocks = stocks.filter(s => getActionVerdict(s.signal).label === verdictFilter);
+  }
+  if (rsiFilter !== 'ALL') {
+    stocks = stocks.filter(s => {
+       if (s.rsi == null) return false;
+       if (rsiFilter === 'Overbought (70+)') return s.rsi >= 70;
+       if (rsiFilter === 'Bullish (60-69)') return s.rsi >= 60 && s.rsi < 70;
+       if (rsiFilter === 'Neutral (40-59)') return s.rsi >= 40 && s.rsi < 60;
+       if (rsiFilter === 'Oversold (<30)') return s.rsi < 30;
+       return true;
+    });
+  }
+
+  const totalCount: number = stocks.length;
 
   return (
     <Box sx={{ p: { xs: 1.5, sm: 2.5, md: 3 } }}>
-      <Stack direction="row" spacing={1.5} alignItems="center" mb={2} flexWrap="wrap">
-        <Typography variant="h5" fontWeight={800} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+      <PageHeader title={title} icon={icon} subtitle={subtitle} />
+      <Stack direction="row" spacing={1.5} alignItems="center" mb={2} flexWrap="wrap" useFlexGap sx={{ gap: 1.5 }}>
+        <Typography variant="h5" fontWeight={800} sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 1 }}>
           {icon} {title}
         </Typography>
 
@@ -104,6 +150,61 @@ export const ScreenerPage: React.FC<Props> = ({
           </Select>
         </FormControl>
 
+        {/* SMC Signal Filter */}
+        <FormControl size="small" sx={{ minWidth: 180 }}>
+          <InputLabel id="smc-select-label">SMC Signal</InputLabel>
+          <Select
+            labelId="smc-select-label"
+            value={smcFilter}
+            label="SMC Signal"
+            onChange={(e) => { setSmcFilter(e.target.value); setPage(0); }}
+          >
+            {SMC_SIGNALS.map(smc => (
+              <MenuItem key={smc} value={smc}>{smc}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        {/* Action Verdict Filter */}
+        <FormControl size="small" sx={{ minWidth: 180 }}>
+          <InputLabel id="verdict-select-label">Action Verdict</InputLabel>
+          <Select
+            labelId="verdict-select-label"
+            value={verdictFilter}
+            label="Action Verdict"
+            onChange={(e) => { setVerdictFilter(e.target.value); setPage(0); }}
+          >
+            {VERDICTS.map(verdict => (
+              <MenuItem key={verdict} value={verdict}>{verdict}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        
+        {/* RSI Filter */}
+        <FormControl size="small" sx={{ minWidth: 150 }}>
+          <InputLabel id="rsi-select-label">RSI</InputLabel>
+          <Select
+            labelId="rsi-select-label"
+            value={rsiFilter}
+            label="RSI"
+            onChange={(e) => { setRsiFilter(e.target.value); setPage(0); }}
+          >
+            {RSI_RANGES.map(rsi => (
+              <MenuItem key={rsi} value={rsi}>{rsi}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <FormControlLabel
+          control={<Checkbox size="small" checked={nifty50Filter} onChange={(e) => { setNifty50Filter(e.target.checked); setPage(0); }} />}
+          label={<Typography variant="body2" fontWeight={700}>Nifty 50</Typography>}
+        />
+
+        <FormControlLabel
+          control={<Checkbox size="small" checked={highVolumeFilter} onChange={(e) => { setHighVolumeFilter(e.target.checked); setPage(0); }} />}
+          label={<Typography variant="body2" fontWeight={700}>High Vol</Typography>}
+        />
+
         {/* Live Search Stock Filter */}
         <TextField
           size="small"
@@ -120,7 +221,7 @@ export const ScreenerPage: React.FC<Props> = ({
           }}
         />
 
-        {data && <Chip label={`${totalCount} Total Matching`} size="small" color={tradeType === 'buy' ? 'success' : 'error'} sx={{ fontWeight: 800 }} />}
+        {data && <Chip label={`${totalCount} Matching`} size="small" color={tradeType === 'buy' ? 'success' : 'error'} sx={{ fontWeight: 800 }} />}
         {(isLoading || isFetching) && <LinearProgress sx={{ width: 80, ml: 1 }} />}
 
         <Box flex={1} />
@@ -153,7 +254,7 @@ export const ScreenerPage: React.FC<Props> = ({
       />
 
       <Typography variant="caption" color="text.secondary" mt={1.5} display="block">
-        Page {page + 1} of {Math.ceil(totalCount / rowsPerPage) || 1} • {totalCount} Total Stocks • Refreshes every 5 min • 4000+ NSE Stock Screener Engine
+        Page {page + 1} of {Math.ceil(totalCount / rowsPerPage) || 1} • {totalCount} Total Stocks • Auto-refresh active • 4000+ NSE Stock Screener Engine
       </Typography>
     </Box>
   );
