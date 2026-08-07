@@ -105,14 +105,20 @@ export const ScreenerPage: React.FC<Props> = ({
 
   const { data, isLoading, error, refetch, isFetching, dataUpdatedAt } = useQuery<StocksResponse>({
     queryKey: [queryKey, tradeType, capCategory, sectorFilter, searchQuery, page, rowsPerPage],
-    queryFn: () => fetcher(tradeType, {
-      page: page + 1,
-      limit: rowsPerPage,
-      cap_category: capCategory !== 'ALL' ? capCategory : undefined,
-      sector:       sectorFilter !== 'ALL' ? sectorFilter : undefined,
-      search:       searchQuery.trim() || undefined,
-    }),
+    queryFn: () => {
+      // Pass params to fetcher — individual fetchers may or may not use them.
+      // Frontend filters (RSI, SMC, Verdict, Nifty50, F&O, HighVol) always apply on the returned data.
+      const params: ScreenerParams = {
+        page: page + 1,
+        limit: rowsPerPage,
+        cap_category: capCategory !== 'ALL' ? capCategory : undefined,
+        sector:       sectorFilter !== 'ALL' ? sectorFilter : undefined,
+        search:       searchQuery.trim() || undefined,
+      };
+      return fetcher(tradeType, params);
+    },
     refetchInterval: dynamicInterval,
+    staleTime: marketOpen ? 8_000 : 60_000,
   });
 
   // Track last updated time
