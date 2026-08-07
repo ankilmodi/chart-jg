@@ -185,6 +185,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, themeMode, onToggleThe
   const menuSections = {
     overview: [
       { label: 'Dashboard',     path: '/',             icon: <DashboardIcon /> },
+      { label: "Today's Result", path: '/today-result', icon: <EmojiEvents />, badge: 'LIVE' },
       { label: 'IPO Assistant', path: '/ipo',           icon: <RocketLaunch />, badge: 'LIVE' },
       { label: 'All Stocks',    path: '/all-stocks',    icon: <GridView /> },
       { label: 'F&O Stocks',    path: '/future-stocks', icon: <Analytics /> },
