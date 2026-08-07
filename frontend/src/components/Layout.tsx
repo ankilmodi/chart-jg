@@ -13,7 +13,7 @@ import {
   Notifications, WbSunny, DarkMode, Analytics, Whatshot, Equalizer,
   Assessment, History as HistoryIcon, Biotech, Science, Public,
   AccountTree, RocketLaunch, ExpandLess, ExpandMore,
-  Home, BarChart, Search, Bolt,
+  Home, BarChart, Search, Bolt, EmojiEvents,
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { fetchMarketOverview, fetchFutureStocks } from '../services/api';
@@ -196,6 +196,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, themeMode, onToggleThe
       { label: 'Volume Best', path: '/volume-best', icon: <Equalizer /> },
     ],
     trading: [
+      { label: "Today's Result", path: '/today-result', icon: <EmojiEvents />, badge: 'NEW' },
       { label: 'Intraday', path: '/top-buy',     icon: <Bolt /> },
       { label: 'Swing',    path: '/swing-buy',   icon: <TrendingUp /> },
       { label: 'Weekly',   path: '/weekly-buy',  icon: <DateRange /> },
