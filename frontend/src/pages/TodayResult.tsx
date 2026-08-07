@@ -13,7 +13,7 @@ import {
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { fetchTopBuy } from '../services/api';
-import { getSMCSignal, getActionVerdict } from './StockTable';
+import { getSMCSignal, getActionVerdict } from '../components/StockTable';
 import type { StockResult, StocksResponse } from '../utils/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -227,7 +227,10 @@ export default function TodayResult() {
     if (dataUpdatedAt) setLastUpdated(fmtTime(new Date(dataUpdatedAt)));
   }, [dataUpdatedAt]);
 
-  const raw: StockResult[] = (data?.stocks as any) ?? [];
+  // Robust data extraction — handles {stocks: []}, plain array, or {data: []}
+  const raw: StockResult[] = Array.isArray(data)
+    ? (data as any)
+    : (data as any)?.stocks ?? (data as any)?.data ?? [];
   const enriched: EnrichedStock[] = raw.map(enrich);
 
   // ── Filters ──
