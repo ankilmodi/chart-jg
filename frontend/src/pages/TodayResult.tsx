@@ -13,8 +13,41 @@ import {
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { fetchTopBuy } from '../services/api';
-import { getSMCSignal, getActionVerdict } from '../components/StockTable';
 import type { StockResult, StocksResponse } from '../utils/types';
+
+// ─── Inlined helpers (self-contained, no cross-page imports) ──────────────────
+const getSMCSignal = (stock: StockResult): string => {
+  const volRatio    = stock.volume_ratio  || 1;
+  const deliveryPct = stock.delivery_pct  || 0;
+  const price       = stock.current_price || 0;
+  const changePct   = stock.change_pct    || 0;
+  const isUp        = changePct > 0;
+  const isDown      = changePct < 0;
+  const vwap        = stock.vwap  || price;
+  const ema20       = stock.ema20 || price;
+
+  if (volRatio > 2.0 && deliveryPct > 60 && isUp)  return 'Institutional Buy Flow';
+  if (volRatio > 2.0 && deliveryPct > 60 && isDown) return 'Institutional Selling';
+  if (volRatio > 2.5 && Math.abs(changePct) < 0.5)  return 'Liquidity Grab';
+  if (volRatio > 1.5 && isUp   && price > vwap && price > ema20) return 'Smart Money Accumulation';
+  if (volRatio > 1.5 && isDown && price < vwap && price < ema20) return 'Smart Money Distribution';
+  if (stock.support    && price <= stock.support    * 1.012) return 'Order Block Support';
+  if (stock.resistance && price >= stock.resistance * 0.988) return 'Order Block Resistance';
+  if (price > (stock.resistance || Infinity) * 0.998 && volRatio > 1.3) return 'Bullish Breakout';
+  if (price < (stock.support    || 0)        * 1.002 && volRatio > 1.3) return 'Bearish Breakdown';
+  return 'Retail Consolidation';
+};
+
+const getActionVerdict = (signal: string | undefined): { label: string; color: 'success' | 'primary' | 'warning' | 'info' | 'error' | 'default' } => {
+  const s = (signal || '').toUpperCase();
+  if (s.includes('STRONG BUY') || s === 'ACCUMULATE') return { label: 'BUY / ACCUMULATE', color: 'success' };
+  if (s === 'BUY')              return { label: 'BUY',              color: 'primary' };
+  if (s === 'HOLD')             return { label: 'HOLD',             color: 'warning' };
+  if (s === 'WATCH')            return { label: 'WAIT',             color: 'info'    };
+  if (s.includes('STRONG SELL'))return { label: 'SELL / BOOK PROFIT', color: 'error' };
+  if (s === 'SELL')             return { label: 'SELL',             color: 'error'   };
+  return { label: 'AVOID', color: 'default' };
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ResultStatus = 'TARGET_3' | 'TARGET_2' | 'TARGET_1' | 'RUNNING' | 'STOP_LOSS' | 'ALL';
